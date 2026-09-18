@@ -1,0 +1,59 @@
+Panels:
+  - Class: rviz_common/Displays
+    Name: Displays
+Visualization Manager:
+  Class: ""
+  Displays:
+    - Class: rviz_default_plugins/Grid
+      Enabled: true
+      Name: Grid
+      Cell Size: 1
+      Color: 160; 160; 160
+      Line Style: Lines
+      Plane: XY
+      Plane Cell Count: 20
+      Reference Frame: base_link
+      Alpha: 0.5
+    - Class: rviz_default_plugins/PointCloud2
+      Enabled: true
+      Name: Lidar 3D
+      Topic: /lidar_3d/points
+      Size (Pixels): 2
+      Style: Points
+    - Class: rviz_default_plugins/PointCloud2
+      Enabled: true
+      Name: Depth PointCloud
+      Topic: /depth_camera/points
+      Size (Pixels): 2
+      Size (m): 0.02
+      Style: Points
+    - Class: rviz_default_plugins/LaserScan
+      Enabled: false
+      Name: Lidar Scan
+      Topic: /lidar_3d/scan
+      Size (Pixels): 2
+    - Class: rviz_default_plugins/Image
+      Enabled: true
+      Max Value: 10
+      Min Value: 0.2
+      Median window: 5
+      Name: Depth Image
+      Normalize Range: false
+      Topic: /depth_camera/image
+  Global Options:
+    Fixed Frame: base_link
+    Background Color: 48; 48; 48
+  Tools:
+    - Class: rviz_default_plugins/MoveCamera
+    - Class: rviz_default_plugins/Select
+    - Class: rviz_default_plugins/FocusCamera
+  Views:
+    Current:
+      Class: rviz_default_plugins/Orbit
+      Distance: 8
+      Focal Point: 0; 0; 0
+      Pitch: 0.6
+      Yaw: 0.8
+Window Geometry:
+  Width: 1200
+  Height: 800
