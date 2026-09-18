@@ -1,0 +1,134 @@
+<?xml version="1.0"?>
+<sdf version="1.9">
+  <world name="indoor_room">
+    <gravity>0 0 -9.81</gravity>
+    <magnetic_field>6e-06 2.3e-05 -4.2e-05</magnetic_field>
+    <atmosphere type="adiabatic"/>
+
+    <physics name="physics" type="ode">
+      <max_step_size>0.004</max_step_size>
+      <real_time_factor>1.0</real_time_factor>
+      <real_time_update_rate>250</real_time_update_rate>
+    </physics>
+
+    <scene>
+      <ambient>0.45 0.45 0.45 1</ambient>
+      <background>0.08 0.08 0.12 1</background>
+      <shadows>true</shadows>
+      <grid>false</grid>
+    </scene>
+
+    <spherical_coordinates>
+      <surface_model>EARTH_WGS84</surface_model>
+      <world_frame_orientation>ENU</world_frame_orientation>
+      <latitude_deg>47.397971057728974</latitude_deg>
+      <longitude_deg>8.546163739800146</longitude_deg>
+      <elevation>0</elevation>
+    </spherical_coordinates>
+
+    <plugin filename="gz-sim-physics-system" name="gz::sim::systems::Physics"/>
+    <plugin filename="gz-sim-user-commands-system" name="gz::sim::systems::UserCommands"/>
+    <plugin filename="gz-sim-scene-broadcaster-system" name="gz::sim::systems::SceneBroadcaster"/>
+    <plugin filename="gz-sim-imu-system" name="gz::sim::systems::Imu"/>
+    <plugin filename="gz-sim-air-pressure-system" name="gz::sim::systems::AirPressure"/>
+    <plugin filename="gz-sim-air-speed-system" name="gz::sim::systems::AirSpeed"/>
+    <plugin filename="gz-sim-navsat-system" name="gz::sim::systems::NavSat"/>
+    <plugin filename="gz-sim-magnetometer-system" name="gz::sim::systems::Magnetometer"/>
+    <plugin filename="gz-sim-sensors-system" name="gz::sim::systems::Sensors">
+      <render_engine>ogre2</render_engine>
+    </plugin>
+
+    <light name="sun" type="directional">
+      <pose>0 0 8 0.4 -0.5 0.3</pose>
+      <cast_shadows>true</cast_shadows>
+      <intensity>1.0</intensity>
+      <direction>-0.3 0.2 -1.0</direction>
+    </light>
+
+    <model name="floor">
+      <static>true</static>
+      <link name="link">
+        <collision name="collision">
+          <geometry><box><size>12.4 8.4 0.2</size></box></geometry>
+        </collision>
+        <visual name="visual">
+          <geometry><box><size>12.4 8.4 0.2</size></box></geometry>
+          <material><ambient>0.28 0.28 0.30 1</ambient><diffuse>0.42 0.42 0.45 1</diffuse></material>
+        </visual>
+      </link>
+      <pose>0 0 -0.1 0 0 0</pose>
+    </model>
+
+    <model name="back_wall">
+      <static>true</static>
+      <link name="link">
+        <collision name="collision"><geometry><box><size>12 0.2 3.5</size></box></geometry></collision>
+        <visual name="visual"><geometry><box><size>12 0.2 3.5</size></box></geometry><material><ambient>0.55 0.58 0.62 1</ambient><diffuse>0.65 0.68 0.72 1</diffuse></material></visual>
+      </link>
+      <pose>0 4 1.75 0 0 0</pose>
+    </model>
+
+    <model name="left_wall">
+      <static>true</static>
+      <link name="link">
+        <collision name="collision"><geometry><box><size>0.2 8 3.5</size></box></geometry></collision>
+        <visual name="visual"><geometry><box><size>0.2 8 3.5</size></box></geometry><material><ambient>0.55 0.58 0.62 1</ambient><diffuse>0.65 0.68 0.72 1</diffuse></material></visual>
+      </link>
+      <pose>-6 0 1.75 0 0 0</pose>
+    </model>
+
+    <model name="right_wall">
+      <static>true</static>
+      <link name="link">
+        <collision name="collision"><geometry><box><size>0.2 8 3.5</size></box></geometry></collision>
+        <visual name="visual"><geometry><box><size>0.2 8 3.5</size></box></geometry><material><ambient>0.55 0.58 0.62 1</ambient><diffuse>0.65 0.68 0.72 1</diffuse></material></visual>
+      </link>
+      <pose>6 0 1.75 0 0 0</pose>
+    </model>
+
+    <model name="front_wall_left">
+      <static>true</static>
+      <link name="link">
+        <collision name="collision"><geometry><box><size>5 0.2 3.5</size></box></geometry></collision>
+        <visual name="visual"><geometry><box><size>5 0.2 3.5</size></box></geometry><material><ambient>0.55 0.58 0.62 1</ambient><diffuse>0.65 0.68 0.72 1</diffuse></material></visual>
+      </link>
+      <pose>-3.5 -4 1.75 0 0 0</pose>
+    </model>
+
+    <model name="front_wall_right">
+      <static>true</static>
+      <link name="link">
+        <collision name="collision"><geometry><box><size>5 0.2 3.5</size></box></geometry></collision>
+        <visual name="visual"><geometry><box><size>5 0.2 3.5</size></box></geometry><material><ambient>0.55 0.58 0.62 1</ambient><diffuse>0.65 0.68 0.72 1</diffuse></material></visual>
+      </link>
+      <pose>3.5 -4 1.75 0 0 0</pose>
+    </model>
+
+    <model name="box_obstacle_a">
+      <static>true</static>
+      <link name="link">
+        <collision name="collision"><geometry><box><size>1.4 1.2 1.2</size></box></geometry></collision>
+        <visual name="visual"><geometry><box><size>1.4 1.2 1.2</size></box></geometry><material><ambient>0.75 0.32 0.12 1</ambient><diffuse>0.9 0.42 0.16 1</diffuse></material></visual>
+      </link>
+      <pose>2.4 1.0 0.6 0 0 0</pose>
+    </model>
+
+    <model name="box_obstacle_b">
+      <static>true</static>
+      <link name="link">
+        <collision name="collision"><geometry><box><size>1.0 1.8 2.0</size></box></geometry></collision>
+        <visual name="visual"><geometry><box><size>1.0 1.8 2.0</size></box></geometry><material><ambient>0.12 0.42 0.75 1</ambient><diffuse>0.16 0.52 0.9 1</diffuse></material></visual>
+      </link>
+      <pose>-2.8 1.8 1.0 0 0 0</pose>
+    </model>
+
+    <model name="column_obstacle">
+      <static>true</static>
+      <link name="link">
+        <collision name="collision"><geometry><cylinder><radius>0.45</radius><length>3.0</length></cylinder></geometry></collision>
+        <visual name="visual"><geometry><cylinder><radius>0.45</radius><length>3.0</length></cylinder></geometry><material><ambient>0.65 0.65 0.18 1</ambient><diffuse>0.82 0.82 0.24 1</diffuse></material></visual>
+      </link>
+      <pose>0.0 2.7 1.5 0 0 0</pose>
+    </model>
+  </world>
+</sdf>
