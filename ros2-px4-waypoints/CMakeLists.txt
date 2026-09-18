@@ -16,8 +16,20 @@ ament_target_dependencies(offboard_waypoints_node
   rclcpp
 )
 
-install(TARGETS offboard_waypoints_node
+add_executable(offboard_takeoff_node src/offboard_takeoff_node.cpp)
+ament_target_dependencies(offboard_takeoff_node
+  px4_msgs
+  rclcpp
+)
+
+install(TARGETS
+  offboard_waypoints_node
+  offboard_takeoff_node
   DESTINATION lib/${PROJECT_NAME}
+)
+
+install(DIRECTORY worlds config launch rviz
+  DESTINATION share/${PROJECT_NAME}
 )
 
 if(BUILD_TESTING)
