@@ -16,6 +16,12 @@
   gz_type_name: "gz.msgs.Image"
   direction: "GZ_TO_ROS"
 
+- ros_topic_name: "imu/data"
+  gz_topic_name: "/world/indoor_room/model/x500_test_0/link/base_link/sensor/imu_sensor/imu"
+  ros_type_name: "sensor_msgs/msg/Imu"
+  gz_type_name: "gz.msgs.IMU"
+  direction: "GZ_TO_ROS"
+
 - ros_topic_name: "depth_camera/points"
   gz_topic_name: "/depth_camera/points"
   ros_type_name: "sensor_msgs/msg/PointCloud2"
