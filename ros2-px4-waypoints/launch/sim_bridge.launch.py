@@ -16,9 +16,6 @@ def generate_launch_description() -> LaunchDescription:
     def pkg(*parts):
         return os.path.join(pkg_share, *parts)
 
-    declare_start_gz = DeclareLaunchArgument(
-        'start_gz', default_value='true',
-        description='Launch Gazebo with the indoor_room world')
     declare_with_offboard = DeclareLaunchArgument(
         'with_offboard', default_value='false',
         description='Also run the offboard waypoints node')
@@ -46,6 +43,12 @@ def generate_launch_description() -> LaunchDescription:
         package='tf2_ros',
         executable='static_transform_publisher',
         arguments=['0.12', '0.03', '0.002', '0', '0', '0', 'base_link', 'camera_link'],
+        output='screen'))
+
+    # Dynamic odom -> base_link transform from PX4 vehicle odometry.
+    actions.append(Node(
+        package=package,
+        executable='px4_odometry_tf_node',
         output='screen'))
 
     # RViz with the sensor displays and base_link as fixed frame.
