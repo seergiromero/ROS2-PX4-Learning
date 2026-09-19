@@ -48,20 +48,20 @@ public:
 
     status_sub_ = create_subscription<VehicleStatus>(
       "/fmu/out/vehicle_status_v4", rclcpp::SensorDataQoS(),
-      [this](const VehicleStatus::SharedPtr msg) { status_ = *msg; });
+      [this](const VehicleStatus::SharedPtr msg) {status_ = *msg;});
 
     ack_sub_ = create_subscription<VehicleCommandAck>(
       "/fmu/out/vehicle_command_ack_v1", rclcpp::SensorDataQoS(),
       [this](const VehicleCommandAck::SharedPtr msg) {
         if (msg->command == VehicleCommand::VEHICLE_CMD_DO_SET_MODE ||
-          msg->command == VehicleCommand::VEHICLE_CMD_COMPONENT_ARM_DISARM)
+        msg->command == VehicleCommand::VEHICLE_CMD_COMPONENT_ARM_DISARM)
         {
           RCLCPP_INFO(get_logger(), "PX4 ACK command=%u result=%u",
             msg->command, msg->result);
         }
       });
 
-    timer_ = create_wall_timer(50ms, [this]() { tick(); });
+    timer_ = create_wall_timer(50ms, [this]() {tick();});
     RCLCPP_INFO(get_logger(), "Takeoff target: %.2f m above origin",
       std::abs(takeoff_z_));
   }

@@ -23,7 +23,8 @@ struct Waypoint
 class OffboardWaypoints : public rclcpp::Node
 {
 public:
-  OffboardWaypoints() : Node("offboard_waypoints")
+  OffboardWaypoints()
+  : Node("offboard_waypoints")
   {
     offboard_control_mode_pub_ =
       create_publisher<OffboardControlMode>("/fmu/in/offboard_control_mode", 10);
