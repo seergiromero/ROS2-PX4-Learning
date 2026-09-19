@@ -93,6 +93,7 @@ ros2 launch ros2-px4-waypoints sim_bridge.launch.py
 This launch starts:
 
 - The Gazebo-to-ROS 2 sensor bridge.
+- The dynamic `odom -> base_link` transform from PX4 vehicle odometry.
 - Static TF from `base_link` to `lidar3d_link`.
 - Static TF from `base_link` to `camera_link`.
 - RViz with the 3D lidar and depth-image displays.
@@ -139,6 +140,7 @@ The launch configures these Gazebo-to-ROS 2 mappings in
 | `/lidar_3d/points` | `sensor_msgs/msg/PointCloud2` | 3D lidar point cloud |
 | `/depth_camera/image` | `sensor_msgs/msg/Image` | Depth image |
 | `/depth_camera/points` | `sensor_msgs/msg/PointCloud2` | Depth point cloud |
+| `/imu/data` | `sensor_msgs/msg/Imu` | IMU (accelerometer + gyroscope) |
 
 Check the topics after launching:
 
@@ -154,6 +156,10 @@ ros2 run tf2_ros tf2_echo base_link camera_link
 ```
 
 RViz uses `base_link` as its fixed frame.
+
+The current odometry node publishes `/odom` and the `odom -> base_link` TF.
+This is PX4 state odometry, not SLAM yet; a future lidar-SLAM node will use it
+alongside `/lidar_3d/points` to build and save a 3D map.
 
 ## Stopping
 
