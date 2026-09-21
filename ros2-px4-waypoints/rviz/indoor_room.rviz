@@ -22,6 +22,12 @@ Visualization Manager:
       Style: Points
     - Class: rviz_default_plugins/PointCloud2
       Enabled: true
+      Name: Fast-LIO Map
+      Topic: /Laser_map
+      Size (Pixels): 2
+      Style: Points
+    - Class: rviz_default_plugins/PointCloud2
+      Enabled: true
       Name: Depth PointCloud
       Topic: /depth_camera/points
       Size (Pixels): 2
@@ -41,7 +47,7 @@ Visualization Manager:
       Normalize Range: false
       Topic: /depth_camera/image
   Global Options:
-    Fixed Frame: base_link
+    Fixed Frame: map
     Background Color: 48; 48; 48
   Tools:
     - Class: rviz_default_plugins/MoveCamera
