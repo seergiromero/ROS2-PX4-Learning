@@ -1,3 +1,9 @@
+- ros_topic_name: "clock"
+  gz_topic_name: "/clock"
+  ros_type_name: "rosgraph_msgs/msg/Clock"
+  gz_type_name: "gz.msgs.Clock"
+  direction: "GZ_TO_ROS"
+
 - ros_topic_name: "lidar_3d/scan"
   gz_topic_name: "/world/indoor_room/model/x500_test_0/link/lidar3d_link/sensor/lidar_3d/scan"
   ros_type_name: "sensor_msgs/msg/LaserScan"
