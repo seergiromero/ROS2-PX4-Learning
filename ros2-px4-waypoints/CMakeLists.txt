@@ -38,10 +38,20 @@ ament_target_dependencies(px4_odometry_tf_node
   tf2_ros
 )
 
+add_executable(map_odom_tf_bridge_node src/map_odom_tf_bridge_node.cpp)
+ament_target_dependencies(map_odom_tf_bridge_node
+  geometry_msgs
+  nav_msgs
+  rclcpp
+  tf2
+  tf2_ros
+)
+
 install(TARGETS
   offboard_waypoints_node
   offboard_takeoff_node
   px4_odometry_tf_node
+  map_odom_tf_bridge_node
   DESTINATION lib/${PROJECT_NAME}
 )
 
