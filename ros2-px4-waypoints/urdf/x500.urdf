@@ -1,0 +1,178 @@
+<?xml version="1.0"?>
+<robot name="x500">
+
+  <material name="body_grey">
+    <color rgba="0.25 0.25 0.30 1.0"/>
+  </material>
+  <material name="arm_light">
+    <color rgba="0.60 0.60 0.65 1.0"/>
+  </material>
+  <material name="motor_red">
+    <color rgba="0.90 0.30 0.20 1.0"/>
+  </material>
+
+  <link name="base_link">
+    <visual>
+      <origin xyz="0 0 0.05" rpy="0 0 0"/>
+      <geometry>
+        <box size="0.16 0.16 0.10"/>
+      </geometry>
+      <material name="body_grey"/>
+    </visual>
+    <inertial>
+      <mass value="0.1"/>
+      <inertia ixx="0.001" ixy="0" ixz="0" iyy="0.001" iyz="0" izz="0.001"/>
+    </inertial>
+  </link>
+
+  <link name="arm_front">
+    <visual>
+      <origin xyz="0.14 0 0.05" rpy="0 0 0"/>
+      <geometry>
+        <box size="0.18 0.04 0.03"/>
+      </geometry>
+      <material name="arm_light"/>
+    </visual>
+  </link>
+  <joint name="arm_front_joint" type="fixed">
+    <parent link="base_link"/>
+    <child link="arm_front"/>
+    <origin xyz="0 0 0" rpy="0 0 0"/>
+  </joint>
+
+  <link name="arm_back">
+    <visual>
+      <origin xyz="-0.14 0 0.05" rpy="0 0 0"/>
+      <geometry>
+        <box size="0.18 0.04 0.03"/>
+      </geometry>
+      <material name="arm_light"/>
+    </visual>
+  </link>
+  <joint name="arm_back_joint" type="fixed">
+    <parent link="base_link"/>
+    <child link="arm_back"/>
+    <origin xyz="0 0 0" rpy="0 0 0"/>
+  </joint>
+
+  <link name="arm_left">
+    <visual>
+      <origin xyz="0 0.14 0.05" rpy="0 0 0"/>
+      <geometry>
+        <box size="0.04 0.18 0.03"/>
+      </geometry>
+      <material name="arm_light"/>
+    </visual>
+  </link>
+  <joint name="arm_left_joint" type="fixed">
+    <parent link="base_link"/>
+    <child link="arm_left"/>
+    <origin xyz="0 0 0" rpy="0 0 0"/>
+  </joint>
+
+  <link name="arm_right">
+    <visual>
+      <origin xyz="0 -0.14 0.05" rpy="0 0 0"/>
+      <geometry>
+        <box size="0.04 0.18 0.03"/>
+      </geometry>
+      <material name="arm_light"/>
+    </visual>
+  </link>
+  <joint name="arm_right_joint" type="fixed">
+    <parent link="base_link"/>
+    <child link="arm_right"/>
+    <origin xyz="0 0 0" rpy="0 0 0"/>
+  </joint>
+
+  <link name="motor_front">
+    <visual>
+      <origin xyz="0.24 0 0.09" rpy="0 0 0"/>
+      <geometry>
+        <cylinder radius="0.03" length="0.05"/>
+      </geometry>
+      <material name="motor_red"/>
+    </visual>
+  </link>
+  <joint name="motor_front_joint" type="fixed">
+    <parent link="base_link"/>
+    <child link="motor_front"/>
+    <origin xyz="0 0 0" rpy="0 0 0"/>
+  </joint>
+
+  <link name="motor_back">
+    <visual>
+      <origin xyz="-0.24 0 0.09" rpy="0 0 0"/>
+      <geometry>
+        <cylinder radius="0.03" length="0.05"/>
+      </geometry>
+      <material name="motor_red"/>
+    </visual>
+  </link>
+  <joint name="motor_back_joint" type="fixed">
+    <parent link="base_link"/>
+    <child link="motor_back"/>
+    <origin xyz="0 0 0" rpy="0 0 0"/>
+  </joint>
+
+  <link name="motor_left">
+    <visual>
+      <origin xyz="0 0.24 0.09" rpy="0 0 0"/>
+      <geometry>
+        <cylinder radius="0.03" length="0.05"/>
+      </geometry>
+      <material name="motor_red"/>
+    </visual>
+  </link>
+  <joint name="motor_left_joint" type="fixed">
+    <parent link="base_link"/>
+    <child link="motor_left"/>
+    <origin xyz="0 0 0" rpy="0 0 0"/>
+  </joint>
+
+  <link name="motor_right">
+    <visual>
+      <origin xyz="0 -0.24 0.09" rpy="0 0 0"/>
+      <geometry>
+        <cylinder radius="0.03" length="0.05"/>
+      </geometry>
+      <material name="motor_red"/>
+    </visual>
+  </link>
+  <joint name="motor_right_joint" type="fixed">
+    <parent link="base_link"/>
+    <child link="motor_right"/>
+    <origin xyz="0 0 0" rpy="0 0 0"/>
+  </joint>
+
+  <link name="lidar3d_link">
+    <visual>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry>
+        <cylinder radius="0.02" length="0.04"/>
+      </geometry>
+      <material name="motor_red"/>
+    </visual>
+  </link>
+  <joint name="lidar3d_joint" type="fixed">
+    <parent link="base_link"/>
+    <child link="lidar3d_link"/>
+    <origin xyz="0 0 0.10" rpy="0 0 0"/>
+  </joint>
+
+  <link name="camera_link">
+    <visual>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry>
+        <box size="0.04 0.03 0.03"/>
+      </geometry>
+      <material name="body_grey"/>
+    </visual>
+  </link>
+  <joint name="camera_joint" type="fixed">
+    <parent link="base_link"/>
+    <child link="camera_link"/>
+    <origin xyz="0.12 0.03 0.002" rpy="0 0 0"/>
+  </joint>
+
+</robot>
