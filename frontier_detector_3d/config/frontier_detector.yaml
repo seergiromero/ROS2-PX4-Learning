@@ -1,0 +1,11 @@
+frontier_detector_3d:
+  ros__parameters:
+    octomap_topic: /octomap_binary
+    frontier_topic: /exploration/frontiers
+    min_frontier_size: 10
+    max_frontiers: 100
+    connectivity: 6
+    max_dist_to_occupied: 0.5
+    cluster_size_xy: 3.0
+    cluster_size_z: 2.0
+    ground_z: 0.4
