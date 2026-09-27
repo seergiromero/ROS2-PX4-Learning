@@ -36,6 +36,11 @@ def generate_launch_description() -> LaunchDescription:
 
     sim_time = {'use_sim_time': LaunchConfiguration('use_sim_time')}
 
+    # Read the drone URDF once; robot_state_publisher loads it as its
+    # robot_description parameter.
+    with open(pkg('urdf', 'x500.urdf')) as f:
+        robot_description = f.read()
+
     actions = []
 
     # ros_gz_bridge for the sensors (config/bridge.yaml)
@@ -43,18 +48,13 @@ def generate_launch_description() -> LaunchDescription:
         bridge_name='ros_gz_bridge',
         config_file=pkg('config', 'bridge.yaml')))
 
-    # Static TF from the drone body to the sensors.
+    # Publish the drone URDF. The fixed joints (base_link -> lidar3d_link,
+    # base_link -> camera_link, and the body visual links) come from the URDF,
+    # so the old static_transform_publisher nodes are no longer needed.
     actions.append(Node(
-        package='tf2_ros',
-        executable='static_transform_publisher',
-        arguments=['0', '0', '0.10', '0', '0', '0', 'base_link', 'lidar3d_link'],
-        parameters=[sim_time],
-        output='screen'))
-    actions.append(Node(
-        package='tf2_ros',
-        executable='static_transform_publisher',
-        arguments=['0.12', '0.03', '0.002', '0', '0', '0', 'base_link', 'camera_link'],
-        parameters=[sim_time],
+        package='robot_state_publisher',
+        executable='robot_state_publisher',
+        parameters=[sim_time, {'robot_description': robot_description}],
         output='screen'))
 
     # Dynamic odom -> base_link transform from PX4 vehicle odometry.
@@ -85,6 +85,48 @@ def generate_launch_description() -> LaunchDescription:
             'use_sim_time': 'false',
             'rviz': 'false',
         }.items(),
+        condition=IfCondition(LaunchConfiguration('with_fast_lio'))))
+
+    # 3D occupancy map accumulated from the raw LiDAR scan, and the frontier
+    # detector that runs on top of it. Both depend on the FAST-LIO map frame,
+    # so they are gated on with_fast_lio.
+    actions.append(Node(
+        package='octomap_server',
+        executable='octomap_server_node',
+        name='octomap_server',
+        remappings=[
+            ('cloud_in', '/lidar_3d/points'),
+        ],
+        parameters=[
+            sim_time,
+            {
+                'frame_id': 'map',
+                'resolution': 0.05,
+                'sensor_model.max_range': 15.0,
+            },
+        ],
+        output='screen',
+        condition=IfCondition(LaunchConfiguration('with_fast_lio'))))
+
+    actions.append(Node(
+        package='frontier_detector_3d',
+        executable='frontier_detector_node',
+        name='frontier_detector_3d',
+        parameters=[
+            sim_time,
+            {
+                'octomap_topic': '/octomap_binary',
+                'frontier_topic': '/exploration/frontiers',
+                'min_frontier_size': 15,
+                'max_frontiers': 100,
+                'connectivity': 26,
+                'max_dist_to_occupied': 0.5,
+                'cluster_size_xy': 3.0,
+                'cluster_size_z': 2.0,
+                'ground_z': 0.4,
+            },
+        ],
+        output='screen',
         condition=IfCondition(LaunchConfiguration('with_fast_lio'))))
 
     # RViz uses the Fast-LIO map as the common fixed frame. The use_sim_time

@@ -21,7 +21,7 @@ Visualization Manager:
       Size (Pixels): 2
       Style: Points
     - Class: rviz_default_plugins/PointCloud2
-      Enabled: true
+      Enabled: false
       Name: Fast-LIO Map
       Topic: /Laser_map
       Size (Pixels): 2
@@ -33,6 +33,29 @@ Visualization Manager:
       Size (Pixels): 2
       Size (m): 0.02
       Style: Points
+    - Class: rviz_default_plugins/MarkerArray
+      Enabled: true
+      Name: Frontiers
+      Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /exploration/frontiers
+      Value: true
+    - Class: rviz_default_plugins/RobotModel
+      Enabled: true
+      Name: Drone
+      Visual Enabled: true
+      Collision Enabled: false
+      Description Topic:
+        Depth: 5
+        Durability Policy: Transient Local
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /robot_description
+      Value: true
+      Description Source: Topic
     - Class: rviz_default_plugins/LaserScan
       Enabled: false
       Name: Lidar Scan
