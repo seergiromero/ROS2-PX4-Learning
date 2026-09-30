@@ -50,6 +50,29 @@ struct Frontier
   std::size_t size() const noexcept {return points.size();}
 };
 
+/// Axis-aligned exploration box expressed in the map frame.
+///
+/// Everything outside this box is ignored, so frontiers are never published in
+/// space the vehicle is not expected to visit. A disabled box keeps all
+/// frontiers.
+struct Bounds3D
+{
+  bool enabled = false;
+  double min_x = 0.0;
+  double max_x = 0.0;
+  double min_y = 0.0;
+  double max_y = 0.0;
+  double min_z = 0.0;
+  double max_z = 0.0;
+
+  /// Returns true when the point lies inside the (inclusive) box.
+  bool contains(double x, double y, double z) const
+  {
+    return x >= min_x && x <= max_x && y >= min_y && y <= max_y &&
+           z >= min_z && z <= max_z;
+  }
+};
+
 /// Pure 3D frontier detection and clustering over an `octomap::OcTree`.
 ///
 /// The detector is stateless: it never mutates the tree it is given and it
@@ -76,6 +99,17 @@ struct Frontier
 /// Without this expansion, a coarse free leaf would be collapsed to a single
 /// voxel (its center), losing most of the frontier surface and producing
 /// clusters whose size has no physical meaning.
+///
+/// Detection resolution
+/// ====================
+/// Detecting and clustering at the finest octree level produces a huge number
+/// of cells and dominates the cost on large maps. `detection_resolution`
+/// collapses the tree to coarser cells (one octree level is a factor of two)
+/// before the frontier/unknown test and before clustering. This is the
+/// multi-resolution strategy of Batinovic et al. (RAL 2021): a coarser
+/// detection grid yields far fewer cells while keeping the same exploration
+/// frontiers. The published cluster centroids then live on the coarse grid,
+/// which is exactly what a waypoint-level planner needs.
 ///
 /// Occupancy filter
 /// ================
@@ -124,11 +158,30 @@ public:
   ///            before it is split, or a non-positive value to disable it.
   /// \param[in] ground_z Frontier voxels below this height are discarded, or a
   ///            non-positive value to disable the filter.
+  /// \param[in] bounds Optional axis-aligned exploration box. Frontiers whose
+  ///            representative cell lies outside are discarded.
+  /// \param[in] detection_resolution Resolution in metres at which frontier
+  ///            cells are detected. A non-positive value (or one not coarser
+  ///            than the octree resolution) detects at the finest octree
+  ///            level. Coarser values collapse the octree into larger cells
+  ///            before detection and clustering, which is the main cost lever
+  ///            for large maps.
+  /// \param[in] min_free_neighbors Minimum number of free cells (out of the 26
+  ///            neighbours) a frontier cell must have. This removes thin free
+  ///            slivers in mid air (isolated laser beams) that border unknown
+  ///            space but are not part of a solid observed region.
+  /// \param[in] min_unknown_neighbors Minimum number of unknown cells (out of
+  ///            the 26 neighbours) a frontier cell must border. This removes
+  ///            free cells that only touch thin unknown slivers between laser
+  ///            beams (the artefacts that carpet walls), while keeping real
+  ///            frontiers that face a large unexplored region.
   /// \throws std::invalid_argument if any parameter is out of range.
   FrontierDetector(
     int min_frontier_size, int max_frontiers, Connectivity connectivity,
     double max_dist_to_occupied = -1.0, double cluster_size_xy = 0.0,
-    double cluster_size_z = 0.0, double ground_z = 0.0);
+    double cluster_size_z = 0.0, double ground_z = 0.0,
+    Bounds3D bounds = Bounds3D(), double detection_resolution = 0.0,
+    int min_free_neighbors = 0, int min_unknown_neighbors = 1);
 
   /// Runs the full pipeline (frontier-key extraction + clustering) on a tree.
   ///
@@ -203,18 +256,16 @@ private:
     }
   };
 
-  /// Returns true if an occupied voxel lies within `grid.resolution` of `key`.
+  /// Returns true if an occupied voxel lies within `grid.resolution` of a
+  /// frontier cell.
   ///
-  /// \param[in] tree The occupancy tree to query (used to convert the key to
-  ///            world coordinates).
-  /// \param[in] key The full-depth key of the candidate frontier voxel.
+  /// \param[in] coord World coordinates of the candidate frontier cell.
   /// \param[in] grid The coarse occupancy grid built from the tree's occupied
   ///            leaves.
-  /// \return True if the coarse cell of `key` or any of its 26 neighbours
+  /// \return True if the coarse cell of `coord` or any of its 26 neighbours
   ///         contains an occupied voxel.
   static bool isNearOccupied(
-    const octomap::OcTree & tree, const octomap::OcTreeKey & key,
-    const OccupiedGrid & grid);
+    const octomap::point3d & coord, const OccupiedGrid & grid);
 
   /// Recursively splits `cluster` into pieces that fit the configured size
   /// limits, appending them to `pieces`.
@@ -244,6 +295,37 @@ private:
     const octomap::OcTree & tree, const octomap::OcTreeKey & node_key,
     unsigned int depth) const;
 
+  /// Returns the octree level shift that maps the tree depth to the configured
+  /// detection depth (`0` when detection happens at the finest level).
+  ///
+  /// \param[in] tree The tree whose resolution/depth is used.
+  unsigned int detectionShift(const octomap::OcTree & tree) const;
+
+  /// Returns the neighbour keys of a key, stepping by `stride` cells.
+  ///
+  /// For a full-depth key (the public `neighbors`) the stride is 1. For a
+  /// detection cell at a coarser level the stride is the number of finest
+  /// voxels per axis spanned by one detection cell.
+  ///
+  /// \param[in] key The center key.
+  /// \param[in] stride Key step between adjacent cells.
+  std::vector<octomap::OcTreeKey> neighborsAtStride(
+    const octomap::OcTreeKey & key, unsigned int stride) const;
+
+  /// Checks whether a detection-cell key is a valid frontier cell at `depth`.
+  ///
+  /// A cell is a frontier when it borders at least `min_unknown_neighbors_`
+  /// unknown cells and is part of at least `min_free_neighbors_` free cells
+  /// (counting the 26 neighbours). The two thresholds reject thin unknown
+  /// slivers between laser beams and isolated free slivers in mid air.
+  ///
+  /// \param[in] tree The occupancy tree to query.
+  /// \param[in] cell_key A key centred at the detection level.
+  /// \param[in] depth The detection depth.
+  bool cellBordersUnknownAtDepth(
+    const octomap::OcTree & tree, const octomap::OcTreeKey & cell_key,
+    unsigned int depth) const;
+
   int min_frontier_size_;
   int max_frontiers_;
   Connectivity connectivity_;
@@ -251,6 +333,10 @@ private:
   double cluster_size_xy_;
   double cluster_size_z_;
   double ground_z_;
+  Bounds3D bounds_;
+  double detection_resolution_;
+  int min_free_neighbors_;
+  int min_unknown_neighbors_;
 };
 
 }  // namespace frontier_detector_3d

@@ -87,27 +87,10 @@ def generate_launch_description() -> LaunchDescription:
         }.items(),
         condition=IfCondition(LaunchConfiguration('with_fast_lio'))))
 
-    # 3D occupancy map accumulated from the raw LiDAR scan, and the frontier
-    # detector that runs on top of it. Both depend on the FAST-LIO map frame,
-    # so they are gated on with_fast_lio.
-    actions.append(Node(
-        package='octomap_server',
-        executable='octomap_server_node',
-        name='octomap_server',
-        remappings=[
-            ('cloud_in', '/lidar_3d/points'),
-        ],
-        parameters=[
-            sim_time,
-            {
-                'frame_id': 'map',
-                'resolution': 0.05,
-                'sensor_model.max_range': 15.0,
-            },
-        ],
-        output='screen',
-        condition=IfCondition(LaunchConfiguration('with_fast_lio'))))
-
+    # Frontier detector. It now owns the OctoMap itself: it subscribes to the
+    # raw LiDAR cloud (/lidar_3d/points), updates an in-memory octree and runs
+    # frontier detection on that same tree, so no octomap_server round-trip is
+    # needed. Both map and frontiers are published from the same update.
     actions.append(Node(
         package='frontier_detector_3d',
         executable='frontier_detector_node',
@@ -115,15 +98,34 @@ def generate_launch_description() -> LaunchDescription:
         parameters=[
             sim_time,
             {
-                'octomap_topic': '/octomap_binary',
+                'cloud_topic': '/lidar_3d/points',
                 'frontier_topic': '/exploration/frontiers',
-                'min_frontier_size': 15,
-                'max_frontiers': 100,
-                'connectivity': 26,
+                'map_frame': 'map',
+                'use_latest_transform': False,
+                'publish_map': True,
+                'process_rate_hz': 0.5,
+                'resolution': 0.2,
+                'point_subsample': 3,
+                'detection_resolution': 0.3,
+                'sensor_model.max_range': 10.0,
+                'min_frontier_size': 20,
+                'max_frontiers': 30,
+                'connectivity': 6,
                 'max_dist_to_occupied': 0.5,
                 'cluster_size_xy': 3.0,
                 'cluster_size_z': 2.0,
-                'ground_z': 0.4,
+                'ground_z': 0.8,
+                'min_free_neighbors': 6,
+                'min_unknown_neighbors': 6,
+                'bounds_enabled': False,
+                'min_x': -6.0,
+                'max_x': 6.0,
+                'min_y': -4.0,
+                'max_y': 4.0,
+                'min_z': 0.3,
+                'max_z': 3.5,
+                'publish_voxels': True,
+                'publish_centroids': True,
             },
         ],
         output='screen',

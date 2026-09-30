@@ -14,6 +14,7 @@
 namespace
 {
 using frontier_detector_3d::Connectivity;
+using frontier_detector_3d::Bounds3D;
 using frontier_detector_3d::FrontierDetector;
 
 constexpr double kResolution = 0.1;
@@ -391,4 +392,67 @@ TEST(Constructor, RejectsInvalidParameters)
   EXPECT_THROW(
     FrontierDetector(10, 10, static_cast<Connectivity>(7)), std::invalid_argument);
   EXPECT_NO_THROW(FrontierDetector(10, 10, Connectivity::k26));
+}
+
+TEST(Bounds, RemovesFrontiersOutsideBox)
+{
+  octomap::OcTree tree = makeTree();
+  // Two isolated free voxels ~1 m and ~5 m along x; both border unknown space.
+  tree.updateNode(octomap::point3d(1.0, 0.0, 0.5), false);
+  tree.updateNode(octomap::point3d(5.0, 0.0, 0.5), false);
+
+  Bounds3D bounds;
+  bounds.enabled = true;
+  bounds.min_x = 0.0;
+  bounds.max_x = 2.0;
+  bounds.min_y = -1.0;
+  bounds.max_y = 1.0;
+  bounds.min_z = 0.0;
+  bounds.max_z = 2.0;
+
+  FrontierDetector detector(
+    1, 10, Connectivity::k6, -1.0, 0.0, 0.0, 0.0, bounds);
+  const auto clusters = detector.detect(tree);
+  ASSERT_EQ(clusters.size(), 1u);
+  // Only the frontier at x ~= 1 m survives the box.
+  EXPECT_NEAR(clusters[0].points[0].x(), 1.0, 0.2);
+}
+
+TEST(FrontierShape, MinFreeNeighborsRejectsIsolatedFreeSlivers)
+{
+  octomap::OcTree tree = makeTree();
+  insertFreeBlock(tree, octomap::OcTreeKey(40, 40, 40), octomap::OcTreeKey(43, 43, 43));
+  // An isolated free voxel floating in unknown space.
+  tree.updateNode(octomap::OcTreeKey(20, 20, 20), false);
+
+  // Default: the isolated voxel borders unknown on all sides, so it is kept.
+  FrontierDetector loose(1, 100, Connectivity::k26);
+  const auto loose_keys = loose.detectFrontierKeys(tree);
+  EXPECT_TRUE(containsKey(loose_keys, octomap::OcTreeKey(20, 20, 20)));
+
+  // Requiring at least 2 free neighbours rejects the isolated sliver (0 free
+  // neighbours) while keeping the block's frontiers (many free neighbours).
+  FrontierDetector strict(
+    1, 100, Connectivity::k26, -1.0, 0.0, 0.0, 0.0, Bounds3D(), 0.0, 2, 1);
+  const auto strict_keys = strict.detectFrontierKeys(tree);
+  EXPECT_FALSE(containsKey(strict_keys, octomap::OcTreeKey(20, 20, 20)));
+  EXPECT_GT(strict_keys.size(), 0u);
+}
+
+TEST(MultiResolution, CoarserDetectionProducesFewerCells)
+{
+  octomap::OcTree tree = makeTree();
+  // A 4x4x4 free block (0.4 m wide at 0.1 m resolution).
+  insertFreeBlock(tree, octomap::OcTreeKey(40, 40, 40), octomap::OcTreeKey(43, 43, 43));
+
+  FrontierDetector fine(1, 100, Connectivity::k26);
+  const auto fine_keys = fine.detectFrontierKeys(tree);
+  ASSERT_EQ(fine_keys.size(), 56u);
+
+  // Detecting on a 0.8 m grid collapses the whole block into far fewer cells.
+  FrontierDetector coarse(
+    1, 100, Connectivity::k26, -1.0, 0.0, 0.0, 0.0, Bounds3D(), 0.8);
+  const auto coarse_keys = coarse.detectFrontierKeys(tree);
+  EXPECT_GT(coarse_keys.size(), 0u);
+  EXPECT_LT(coarse_keys.size(), fine_keys.size());
 }

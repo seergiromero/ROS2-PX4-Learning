@@ -1,11 +1,10 @@
 #include "frontier_detector_3d/frontier_detector_node.hpp"
 
-#include <octomap_msgs/octomap_msgs/conversions.h>
+#include <octomap_msgs/conversions.h>
 
-#include <memory>
-#include <string>
+#include <chrono>
+#include <stdexcept>
 #include <utility>
-#include <vector>
 
 namespace frontier_detector_3d
 {
@@ -13,112 +12,189 @@ namespace frontier_detector_3d
 FrontierDetectorNode::FrontierDetectorNode()
 : Node("frontier_detector_3d")
 {
-  octomap_topic_ = declare_parameter<std::string>("octomap_topic", "/octomap_binary");
-  frontier_topic_ = declare_parameter<std::string>(
+  using namespace std::chrono_literals;
+
+  map_frame_ = declare_parameter<std::string>("map_frame", "map");
+  const std::string cloud_topic = declare_parameter<std::string>(
+    "cloud_topic", "/lidar_3d/points");
+  const std::string frontier_topic = declare_parameter<std::string>(
     "frontier_topic", "/exploration/frontiers");
-  min_frontier_size_ = declare_parameter<int>("min_frontier_size", 10);
-  max_frontiers_ = declare_parameter<int>("max_frontiers", 100);
-  connectivity_ = static_cast<Connectivity>(declare_parameter<int>("connectivity", 6));
-  max_dist_to_occupied_ = declare_parameter<double>("max_dist_to_occupied", 0.5);
-  cluster_size_xy_ = declare_parameter<double>("cluster_size_xy", 3.0);
-  cluster_size_z_ = declare_parameter<double>("cluster_size_z", 2.0);
-  ground_z_ = declare_parameter<double>("ground_z", 0.4);
+  const double process_rate_hz = declare_parameter<double>("process_rate_hz", 2.0);
+  use_latest_transform_ = declare_parameter<bool>("use_latest_transform", false);
+
+  // --- OctoMap model -----------------------------------------------------
+  const double resolution = declare_parameter<double>("resolution", 0.1);
+  const double max_range = declare_parameter<double>("sensor_model.max_range", 15.0);
+  const double prob_hit = declare_parameter<double>("sensor_model.hit", 0.7);
+  const double prob_miss = declare_parameter<double>("sensor_model.miss", 0.4);
+  const double prob_min = declare_parameter<double>("sensor_model.min", 0.12);
+  const double prob_max = declare_parameter<double>("sensor_model.max", 0.97);
+  const bool compress_map = declare_parameter<bool>("compress_map", true);
+  const int point_subsample = declare_parameter<int>("point_subsample", 1);
+  publish_map_ = declare_parameter<bool>("publish_map", true);
+
+  // --- Frontier detection -------------------------------------------------
+  const int min_frontier_size = declare_parameter<int>("min_frontier_size", 15);
+  const int max_frontiers = declare_parameter<int>("max_frontiers", 100);
+  const auto connectivity = static_cast<Connectivity>(
+    declare_parameter<int>("connectivity", 6));
+  const double max_dist_to_occupied = declare_parameter<double>(
+    "max_dist_to_occupied", 0.5);
+  const double cluster_size_xy = declare_parameter<double>("cluster_size_xy", 3.0);
+  const double cluster_size_z = declare_parameter<double>("cluster_size_z", 2.0);
+  const double ground_z = declare_parameter<double>("ground_z", 0.4);
+  const double detection_resolution = declare_parameter<double>("detection_resolution", 0.0);
+  const int min_free_neighbors = declare_parameter<int>("min_free_neighbors", 0);
+  const int min_unknown_neighbors = declare_parameter<int>("min_unknown_neighbors", 1);
+
+  // Exploration box. Disabled unless explicitly requested, so the detector can
+  // still be used in unbounded outdoor scenarios.
+  Bounds3D bounds;
+  bounds.enabled = declare_parameter<bool>("bounds_enabled", false);
+  bounds.min_x = declare_parameter<double>("min_x", -6.0);
+  bounds.max_x = declare_parameter<double>("max_x", 6.0);
+  bounds.min_y = declare_parameter<double>("min_y", -4.0);
+  bounds.max_y = declare_parameter<double>("max_y", 4.0);
+  bounds.min_z = declare_parameter<double>("min_z", 0.3);
+  bounds.max_z = declare_parameter<double>("max_z", 3.5);
+
+  // --- Visualization -------------------------------------------------------
+  const bool publish_voxels = declare_parameter<bool>("publish_voxels", false);
+  const bool publish_centroids = declare_parameter<bool>("publish_centroids", true);
 
   // Fail fast on an invalid configuration instead of emitting empty markers.
   try {
     (void)FrontierDetector(
-      min_frontier_size_, max_frontiers_, connectivity_, max_dist_to_occupied_,
-      cluster_size_xy_, cluster_size_z_, ground_z_);
+      min_frontier_size, max_frontiers, connectivity, max_dist_to_occupied,
+      cluster_size_xy, cluster_size_z, ground_z, bounds, detection_resolution,
+      min_free_neighbors, min_unknown_neighbors);
+    mapper_ = std::make_unique<OctomapMapper>(
+      resolution, max_range, prob_hit, prob_miss, prob_min, prob_max, compress_map,
+      static_cast<std::size_t>(point_subsample));
   } catch (const std::invalid_argument & e) {
     RCLCPP_FATAL(get_logger(), "Invalid configuration: %s", e.what());
     throw;
   }
 
-  frontier_pub_ = create_publisher<visualization_msgs::msg::MarkerArray>(
-    frontier_topic_, rclcpp::QoS(1).transient_local());
-  octomap_sub_ = create_subscription<octomap_msgs::msg::Octomap>(
-    octomap_topic_, rclcpp::QoS(1).transient_local(),
-    std::bind(&FrontierDetectorNode::octomapCallback, this, std::placeholders::_1));
+  pipeline_ = std::make_unique<FrontierPipeline>(
+    *mapper_, FrontierDetector(
+      min_frontier_size, max_frontiers, connectivity, max_dist_to_occupied,
+      cluster_size_xy, cluster_size_z, ground_z, bounds, detection_resolution,
+      min_free_neighbors, min_unknown_neighbors));
+  visualizer_ = std::make_unique<FrontierVisualizer>(
+    *this, frontier_topic, publish_voxels, publish_centroids);
+
+  // OctoMap output. transient_local lets late subscribers (e.g. RViz started
+  // after this node) still receive the current map.
+  octomap_pub_ = create_publisher<octomap_msgs::msg::Octomap>(
+    "octomap_binary", rclcpp::QoS(1).transient_local());
+
+  // TF plumbing for the cloud.
+  tf_buffer_ = std::make_shared<tf2_ros::Buffer>(get_clock());
+  auto timer_interface = std::make_shared<tf2_ros::CreateTimerROS>(
+    get_node_base_interface(), get_node_timers_interface());
+  tf_buffer_->setCreateTimerInterface(timer_interface);
+  tf_listener_ = std::make_shared<tf2_ros::TransformListener>(*tf_buffer_);
+
+  // Subscribe to the configured cloud topic (best effort, sensor data).
+  // `subscribe()` keeps the topic configurable at runtime via `cloud_topic`.
+  cloud_sub_ = create_subscription<sensor_msgs::msg::PointCloud2>(
+    cloud_topic, rclcpp::SensorDataQoS(),
+    std::bind(&FrontierDetectorNode::cloudCallback, this, std::placeholders::_1));
+
+  // Throttled processing: at most `process_rate_hz` full map+frontier cycles.
+  const auto period = std::chrono::duration<double>(1.0 / std::max(process_rate_hz, 0.1));
+  process_timer_ = create_wall_timer(
+    std::chrono::duration_cast<std::chrono::milliseconds>(period),
+    std::bind(&FrontierDetectorNode::processCycle, this));
 
   RCLCPP_INFO(
     get_logger(),
-    "Listening to %s and publishing frontiers on %s "
-    "(min_frontier_size=%d, max_frontiers=%d, connectivity=%d, max_dist_to_occupied=%f, "
-    "cluster_size_xy=%f, cluster_size_z=%f, ground_z=%f)",
-    octomap_topic_.c_str(), frontier_topic_.c_str(), min_frontier_size_, max_frontiers_,
-    static_cast<int>(connectivity_), max_dist_to_occupied_, cluster_size_xy_, cluster_size_z_,
-    ground_z_);
+    "Listening to %s (frame %s), publishing frontiers on %s "
+    "(process_rate_hz=%.1f, resolution=%.2f, point_subsample=%d, detection_resolution=%.2f, "
+    "min_frontier_size=%d, max_frontiers=%d, connectivity=%d, max_dist_to_occupied=%.2f, "
+    "cluster_size_xy=%.2f, cluster_size_z=%.2f, ground_z=%.2f, bounds_enabled=%d, "
+    "min_free_neighbors=%d, min_unknown_neighbors=%d, publish_map=%s)",
+    cloud_topic.c_str(), map_frame_.c_str(), frontier_topic.c_str(), process_rate_hz,
+    resolution, point_subsample, detection_resolution, min_frontier_size, max_frontiers,
+    static_cast<int>(connectivity), max_dist_to_occupied, cluster_size_xy, cluster_size_z,
+    ground_z, static_cast<int>(bounds.enabled), min_free_neighbors, min_unknown_neighbors,
+    publish_map_ ? "true" : "false");
 }
 
-void FrontierDetectorNode::octomapCallback(
-  const octomap_msgs::msg::Octomap::SharedPtr msg)
+void FrontierDetectorNode::cloudCallback(
+  const sensor_msgs::msg::PointCloud2::ConstSharedPtr cloud)
 {
-  std::unique_ptr<octomap::AbstractOcTree> abstract_tree{octomap_msgs::msgToMap(*msg)};
-  if (!abstract_tree) {
-    RCLCPP_WARN(get_logger(), "Could not deserialize the OctoMap message");
+  RCLCPP_INFO_THROTTLE(
+    get_logger(), *get_clock(), 2000,
+    "cloud received: %zux%zu, %zu bytes, frame=%s, is_dense=%d",
+    static_cast<std::size_t>(cloud->width), static_cast<std::size_t>(cloud->height),
+    cloud->data.size(), cloud->header.frame_id.c_str(), static_cast<int>(cloud->is_dense));
+  std::lock_guard<std::mutex> lock(latest_mutex_);
+  latest_cloud_ = cloud;
+}
+
+void FrontierDetectorNode::processCycle()
+{
+  sensor_msgs::msg::PointCloud2::ConstSharedPtr cloud;
+  {
+    std::lock_guard<std::mutex> lock(latest_mutex_);
+    cloud = latest_cloud_;
+  }
+  if (!cloud) {
+    RCLCPP_INFO_THROTTLE(
+      get_logger(), *get_clock(), 2000, "no cloud available yet, waiting...");
     return;
   }
 
-  auto * tree = dynamic_cast<octomap::OcTree *>(abstract_tree.get());
-  if (!tree) {
-    RCLCPP_WARN(get_logger(), "Received unsupported OctoMap type: %s", msg->id.c_str());
+  // Prefer the transform at the cloud timestamp. Applying the latest pose to
+  // an old cloud smears the map when the vehicle moves and makes frontiers
+  // appear to jump. `use_latest_transform` is an explicit compatibility
+  // escape hatch for systems whose sensor and TF clocks cannot be aligned.
+  geometry_msgs::msg::TransformStamped sensor_to_map;
+  try {
+    const rclcpp::Time query_time = use_latest_transform_ ?
+      rclcpp::Time(0) : rclcpp::Time(cloud->header.stamp);
+    sensor_to_map = tf_buffer_->lookupTransform(
+      map_frame_, cloud->header.frame_id, query_time,
+      rclcpp::Duration::from_seconds(1.0));
+  } catch (const tf2::TransformException & ex) {
+    RCLCPP_WARN_THROTTLE(
+      get_logger(), *get_clock(), 2000,
+      "No transform %s -> %s at cloud time yet, skipping cycle: %s",
+      map_frame_.c_str(), cloud->header.frame_id.c_str(), ex.what());
     return;
   }
 
-  const FrontierDetector detector(
-    min_frontier_size_, max_frontiers_, connectivity_, max_dist_to_occupied_,
-    cluster_size_xy_, cluster_size_z_, ground_z_);
-  const auto frontier_keys = detector.detectFrontierKeys(*tree);
-  const auto frontiers = detector.clusterFrontiers(frontier_keys, *tree);
-  publishMarkers(msg->header.frame_id, frontiers, tree->getResolution());
+  const auto result = pipeline_->process(
+    *cloud, FrontierPipeline::toSensorTransform(sensor_to_map),
+    map_frame_, cloud->header.stamp);
 
-  RCLCPP_DEBUG(
-    get_logger(), "Detected %zu frontier clusters from %zu frontier voxels",
-    frontiers.size(), frontier_keys.size());
+  if (publish_map_) {
+    publishOctomap(cloud->header.stamp);
+  }
+  visualizer_->publish(
+    result.frontiers, result.frame_id, result.stamp,
+    mapper_->tree().getResolution());
+
+  // One-line per cycle so the operator can see exactly where the pipeline is.
+  RCLCPP_INFO_THROTTLE(
+    get_logger(), *get_clock(), 5000,
+    "cloud %zux%zu (%s) -> %zu octomap nodes, %zu frontier clusters",
+    static_cast<std::size_t>(cloud->width), static_cast<std::size_t>(cloud->height),
+    cloud->header.frame_id.c_str(), mapper_->nodeCount(), result.frontiers.size());
 }
 
-void FrontierDetectorNode::publishMarkers(
-  const std::string & frame_id,
-  const std::vector<Frontier> & frontiers,
-  double resolution)
+void FrontierDetectorNode::publishOctomap(const rclcpp::Time & stamp)
 {
-  visualization_msgs::msg::MarkerArray markers;
-
-  visualization_msgs::msg::Marker clear;
-  clear.header.frame_id = frame_id;
-  clear.header.stamp = now();
-  clear.ns = "frontiers";
-  clear.id = -1;
-  clear.action = visualization_msgs::msg::Marker::DELETEALL;
-  markers.markers.push_back(clear);
-
-  for (size_t index = 0; index < frontiers.size(); ++index) {
-    visualization_msgs::msg::Marker marker;
-    marker.header.frame_id = frame_id;
-    marker.header.stamp = now();
-    marker.ns = "frontiers";
-    marker.id = static_cast<int32_t>(index);
-    marker.type = visualization_msgs::msg::Marker::CUBE_LIST;
-    marker.action = visualization_msgs::msg::Marker::ADD;
-    marker.scale.x = resolution;
-    marker.scale.y = resolution;
-    marker.scale.z = resolution;
-    marker.color.r = static_cast<float>((index * 0.37) - std::floor(index * 0.37));
-    marker.color.g = 0.8f;
-    marker.color.b = 1.0f - marker.color.r;
-    marker.color.a = 1.0f;
-
-    for (const auto & point : frontiers[index].points) {
-      geometry_msgs::msg::Point marker_point;
-      marker_point.x = point.x();
-      marker_point.y = point.y();
-      marker_point.z = point.z();
-      marker.points.push_back(marker_point);
-    }
-    markers.markers.push_back(std::move(marker));
+  octomap_msgs::msg::Octomap map;
+  map.header.frame_id = map_frame_;
+  map.header.stamp = stamp;
+  if (!octomap_msgs::binaryMapToMsg(mapper_->tree(), map)) {
+    RCLCPP_ERROR(get_logger(), "Failed to serialize the OctoMap");
+    return;
   }
-
-  frontier_pub_->publish(markers);
+  octomap_pub_->publish(map);
 }
 
 }  // namespace frontier_detector_3d

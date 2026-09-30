@@ -1,11 +1,87 @@
+# Configuration for the frontier_detector_3d node.
+#
+# The node owns an in-memory OctoMap: it subscribes to the raw LiDAR cloud,
+# transforms it into `map_frame`, updates the octree and runs frontier
+# detection on that same tree every `process_rate_hz` cycles.
+#
+# Tune `resolution` and `detection_resolution` first: together they dominate
+# how many voxels the detector has to examine. `resolution` is the map grain;
+# `detection_resolution` is the coarser grid used for frontier detection and
+# clustering (multi-resolution), which is the main cost lever on large maps.
 frontier_detector_3d:
   ros__parameters:
-    octomap_topic: /octomap_binary
+    # Inputs / outputs ------------------------------------------------------
+    cloud_topic: /lidar_3d/points
     frontier_topic: /exploration/frontiers
-    min_frontier_size: 10
-    max_frontiers: 100
+    map_frame: map
+    # False keeps cloud points and TF pose at the same time. Set true only if
+    # the upstream system cannot provide a common clock; it can smear the map
+    # while the vehicle moves.
+    use_latest_transform: false
+    publish_map: true
+    process_rate_hz: 0.5
+
+    # OctoMap model ---------------------------------------------------------
+    # 0.30 m is a good trade-off for UAV frontier exploration: ~27x fewer
+    # voxels than 0.10 m. point_subsample=3 processes 1 of every 3 points,
+    # cutting ray-casting cost ~9x on a dense grid scan.
+    resolution: 0.3
+    point_subsample: 3
+    # `max_range` is the hard limit of the map: rays mark free / create
+    # occupancy only up to this distance from the sensor. The raw LiDAR reaches
+    # 30 m, so a value smaller than the scene size makes the map stop short of
+    # where the laser actually points. It is also the free-space clearing
+    # distance, so raising it costs time.
+    sensor_model:
+      max_range: 15.0
+      hit: 0.7
+      miss: 0.4
+      min: 0.12
+      max: 0.97
+    compress_map: true
+
+    # Frontier detection ----------------------------------------------------
+    # Keep clusters meaningful and the output light: fewer, bigger clusters.
+    min_frontier_size: 20
+    max_frontiers: 30
     connectivity: 6
-    max_dist_to_occupied: 0.5
+    # Surface-proximity filter. Keep frontiers within this distance of a real
+    # obstacle. This is what removes the LiDAR FOV rim floating in mid air
+    # (the upper cone edge, with no ceiling to hit). With the local shape
+    # filters below now handling the wall slivers, a moderate radius keeps the
+    # useful frontiers (doorways, occlusions, room edges) without carpeting
+    # walls. Set negative to disable.
+    max_dist_to_occupied: 1.5
     cluster_size_xy: 3.0
     cluster_size_z: 2.0
     ground_z: 0.4
+    # Detect and cluster at 0.60 m instead of the 0.30 m map grain. Cells get
+    # 4x coarser per axis (one octree level = 2x), so the detector examines and
+    # clusters far fewer cells. 0 disables it and detects at the map grain.
+    detection_resolution: 0.6
+    # Local shape filters (out of the 26 neighbours of a frontier cell):
+    #  - min_free_neighbors: reject isolated free slivers in mid air (single
+    #    laser beams) that border unknown but are not solid observed space.
+    #  - min_unknown_neighbors: reject free cells that only touch thin unknown
+    #    slivers between beams (the artefacts that carpet walls). Real
+    #    frontiers facing a large unexplored region pass this easily.
+    # Raise both for cleaner output; lower them if useful frontiers disappear.
+    min_free_neighbors: 6
+    min_unknown_neighbors: 6
+
+    # Exploration box (map frame) -------------------------------------------
+    # Frontiers outside this box are discarded, so no goals are published in
+    # space the vehicle is not expected to visit.
+    bounds_enabled: true
+    min_x: -6.0
+    max_x: 6.0
+    min_y: -4.0
+    max_y: 4.0
+    min_z: 0.3
+    max_z: 3.5
+
+    # Visualization ---------------------------------------------------------
+    # publish_voxels is debug-only: one cube per frontier voxel can saturate
+    # RViz on large maps. Keep it false and rely on publish_centroids.
+    publish_voxels: true
+    publish_centroids: true

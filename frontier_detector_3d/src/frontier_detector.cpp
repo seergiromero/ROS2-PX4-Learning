@@ -25,14 +25,19 @@ bool KeyCompare::operator()(
 FrontierDetector::FrontierDetector(
   int min_frontier_size, int max_frontiers, Connectivity connectivity,
   double max_dist_to_occupied, double cluster_size_xy, double cluster_size_z,
-  double ground_z)
+  double ground_z, Bounds3D bounds, double detection_resolution,
+  int min_free_neighbors, int min_unknown_neighbors)
 : min_frontier_size_(min_frontier_size),
   max_frontiers_(max_frontiers),
   connectivity_(connectivity),
   max_dist_to_occupied_(max_dist_to_occupied),
   cluster_size_xy_(cluster_size_xy),
   cluster_size_z_(cluster_size_z),
-  ground_z_(ground_z)
+  ground_z_(ground_z),
+  bounds_(bounds),
+  detection_resolution_(detection_resolution),
+  min_free_neighbors_(min_free_neighbors),
+  min_unknown_neighbors_(min_unknown_neighbors)
 {
   if (min_frontier_size_ < 1) {
     throw std::invalid_argument("min_frontier_size must be >= 1");
@@ -52,10 +57,39 @@ std::vector<Frontier> FrontierDetector::detect(const octomap::OcTree & tree) con
   return clusterFrontiers(detectFrontierKeys(tree), tree);
 }
 
+unsigned int FrontierDetector::detectionShift(const octomap::OcTree & tree) const
+{
+  if (detection_resolution_ <= 0.0) {
+    return 0;
+  }
+  const double resolution = tree.getResolution();
+  if (resolution <= 0.0 || detection_resolution_ <= resolution) {
+    return 0;
+  }
+
+  // Each octree level up doubles the cell size, so the shift is log2 of the
+  // ratio between the requested detection resolution and the octree leaf.
+  int shift = static_cast<int>(std::lround(std::log2(detection_resolution_ / resolution)));
+  if (shift < 0) {
+    shift = 0;
+  }
+  const int max_shift = static_cast<int>(tree.getTreeDepth()) - 1;
+  if (max_shift < 0) {
+    return 0;
+  }
+  if (shift > max_shift) {
+    shift = max_shift;
+  }
+  return static_cast<unsigned int>(shift);
+}
+
 FrontierDetector::KeySet FrontierDetector::detectFrontierKeys(
   const octomap::OcTree & tree) const
 {
   const unsigned int max_depth = tree.getTreeDepth();
+  const unsigned int shift = detectionShift(tree);
+  const unsigned int detection_depth = max_depth - shift;
+  const double cell_size = tree.getResolution() * static_cast<double>(1u << shift);
 
   // Optional filter: keep only frontier voxels within `max_dist_to_occupied_`
   // of an occupied voxel. With a ray-cast LiDAR map, free space is only
@@ -117,78 +151,73 @@ FrontierDetector::KeySet FrontierDetector::detectFrontierKeys(
     // the tree: they are fully enclosed by known space and can never contain
     // frontier voxels. Expanding their surface would waste time on the large
     // pruned free volumes inside the explored map.
-    if (depth < max_depth && !bordersUnknownAtDepth(tree, node_key, depth)) {
+    if (depth < detection_depth && !bordersUnknownAtDepth(tree, node_key, depth)) {
       continue;
     }
 
-    // Expand the node's surface shell at full depth. Interior voxels have all
-    // their neighbours inside the node (free) and can never be frontiers, so
-    // only the shell has to be examined. The shell is generated directly as
-    // O(surface) work, never by iterating the whole node volume. For a
-    // full-depth leaf the shell collapses to the voxel itself.
-    const unsigned int shift = max_depth - depth;
-    const unsigned int lo_x = static_cast<unsigned int>(node_key.k[0]) << shift;
-    const unsigned int hi_x = ((static_cast<unsigned int>(node_key.k[0]) + 1u) << shift) - 1u;
-    const unsigned int lo_y = static_cast<unsigned int>(node_key.k[1]) << shift;
-    const unsigned int hi_y = ((static_cast<unsigned int>(node_key.k[1]) + 1u) << shift) - 1u;
-    const unsigned int lo_z = static_cast<unsigned int>(node_key.k[2]) << shift;
-    const unsigned int hi_z = ((static_cast<unsigned int>(node_key.k[2]) + 1u) << shift) - 1u;
-
-    const auto addIfFrontier = [&](unsigned int x, unsigned int y, unsigned int z) {
-        const octomap::OcTreeKey key(
-          static_cast<unsigned short>(x),
-          static_cast<unsigned short>(y),
-          static_cast<unsigned short>(z));
-        for (const auto & neighbor : neighbors(key)) {
-          if (isUnknownNeighbor(tree, neighbor)) {
-            candidates.insert(key);
-            return;
-          }
-        }
-      };
-
-    // Face pairs perpendicular to z (always present, covers the whole plane).
-    for (unsigned int x = lo_x; x <= hi_x; ++x) {
-      for (unsigned int y = lo_y; y <= hi_y; ++y) {
-        addIfFrontier(x, y, lo_z);
-        if (hi_z != lo_z) {
-          addIfFrontier(x, y, hi_z);
-        }
+    if (depth >= detection_depth) {
+      // The leaf is at (or finer than) the detection cell: it maps to exactly
+      // one detection cell, so a single unknown-neighbour test is enough.
+      octomap::OcTreeKey cell_key;
+      if (!tree.coordToKeyChecked(it.getCoordinate(), detection_depth, cell_key)) {
+        continue;
       }
-    }
-    // Face pairs perpendicular to y, over the interior z range.
-    if (hi_z > lo_z) {
-      for (unsigned int x = lo_x; x <= hi_x; ++x) {
-        for (unsigned int z = lo_z + 1; z <= hi_z - 1; ++z) {
-          addIfFrontier(x, lo_y, z);
-          if (hi_y != lo_y) {
-            addIfFrontier(x, hi_y, z);
-          }
-        }
+      if (cellBordersUnknownAtDepth(tree, cell_key, detection_depth)) {
+        candidates.insert(cell_key);
       }
+      continue;
     }
-    // Face pairs perpendicular to x, over the interior y and z ranges.
-    if (hi_y > lo_y && hi_z > lo_z) {
-      for (unsigned int y = lo_y + 1; y <= hi_y - 1; ++y) {
-        for (unsigned int z = lo_z + 1; z <= hi_z - 1; ++z) {
-          addIfFrontier(lo_x, y, z);
-          addIfFrontier(hi_x, y, z);
+
+    // The coarse free leaf spans several detection cells. Only its shell can
+    // border unknown space, so generate the shell cells directly instead of
+    // iterating the whole volume. At full resolution this reproduces the
+    // original per-voxel shell; at coarser detection levels the shell contains
+    // far fewer (larger) cells.
+    const double half = it.getSize() * 0.5;
+    const double half_cell = cell_size * 0.5;
+    const octomap::point3d sc = it.getCoordinate();
+    const unsigned int n = static_cast<unsigned int>(
+      std::max<long>(1, std::lround(it.getSize() / cell_size)));
+
+    for (unsigned int ix = 0; ix < n; ++ix) {
+      for (unsigned int iy = 0; iy < n; ++iy) {
+        for (unsigned int iz = 0; iz < n; ++iz) {
+          const bool on_shell =
+            ix == 0 || ix + 1 == n || iy == 0 || iy + 1 == n || iz == 0 || iz + 1 == n;
+          if (!on_shell) {
+            continue;  // interior cell: all neighbours are inside the free leaf
+          }
+          const octomap::point3d center(
+            sc.x() - half + half_cell + static_cast<double>(ix) * cell_size,
+            sc.y() - half + half_cell + static_cast<double>(iy) * cell_size,
+            sc.z() - half + half_cell + static_cast<double>(iz) * cell_size);
+
+          octomap::OcTreeKey cell_key;
+          if (!tree.coordToKeyChecked(center, detection_depth, cell_key)) {
+            continue;
+          }
+          if (cellBordersUnknownAtDepth(tree, cell_key, detection_depth)) {
+            candidates.insert(cell_key);
+          }
         }
       }
     }
   }
 
-  if (!use_occupancy_filter && ground_z_ <= 0.0) {
+  if (!use_occupancy_filter && ground_z_ <= 0.0 && !bounds_.enabled) {
     return candidates;
   }
 
   KeySet result;
   for (const auto & key : candidates) {
-    const octomap::point3d coord = tree.keyToCoord(key);
+    const octomap::point3d coord = tree.keyToCoord(key, detection_depth);
     if (ground_z_ > 0.0 && coord.z() < ground_z_) {
       continue;
     }
-    if (use_occupancy_filter && !isNearOccupied(tree, key, occupied_grid)) {
+    if (bounds_.enabled && !bounds_.contains(coord.x(), coord.y(), coord.z())) {
+      continue;
+    }
+    if (use_occupancy_filter && !isNearOccupied(coord, occupied_grid)) {
       continue;
     }
     result.insert(key);
@@ -226,9 +255,57 @@ bool FrontierDetector::bordersUnknownAtDepth(
   return false;
 }
 
+bool FrontierDetector::cellBordersUnknownAtDepth(
+  const octomap::OcTree & tree, const octomap::OcTreeKey & cell_key,
+  unsigned int depth) const
+{
+  const unsigned int stride = 1u << (tree.getTreeDepth() - depth);
+  constexpr int max_key = std::numeric_limits<unsigned short>::max();
+
+  int unknown = 0;
+  int free = 0;
+  for (int dx = -1; dx <= 1; ++dx) {
+    for (int dy = -1; dy <= 1; ++dy) {
+      for (int dz = -1; dz <= 1; ++dz) {
+        if (dx == 0 && dy == 0 && dz == 0) {
+          continue;
+        }
+        const int nx = static_cast<int>(cell_key.k[0]) + dx * static_cast<int>(stride);
+        const int ny = static_cast<int>(cell_key.k[1]) + dy * static_cast<int>(stride);
+        const int nz = static_cast<int>(cell_key.k[2]) + dz * static_cast<int>(stride);
+        if (nx < 0 || ny < 0 || nz < 0 || nx > max_key || ny > max_key || nz > max_key) {
+          continue;
+        }
+        const octomap::OcTreeKey neighbor(
+          static_cast<unsigned short>(nx),
+          static_cast<unsigned short>(ny),
+          static_cast<unsigned short>(nz));
+        // `cell_key` is centred at the detection level, and
+        // `search(key, depth)` is idempotent for such keys, so a null node
+        // means this detection cell has never been observed.
+        const octomap::OcTreeNode * node = tree.search(neighbor, depth);
+        if (node == nullptr) {
+          ++unknown;
+        } else if (!tree.isNodeOccupied(node)) {
+          ++free;
+        }
+      }
+    }
+  }
+
+  // Require both a solid free neighbourhood (rejects isolated laser beams in
+  // mid air) and a substantial unknown neighbourhood (rejects thin unknown
+  // slivers between beams that would otherwise carpet walls).
+  return unknown >= min_unknown_neighbors_ && free >= min_free_neighbors_;
+}
+
 std::vector<Frontier> FrontierDetector::clusterFrontiers(
   const KeySet & frontier_keys, const octomap::OcTree & tree) const
 {
+  const unsigned int shift = detectionShift(tree);
+  const unsigned int detection_depth = tree.getTreeDepth() - shift;
+  const unsigned int stride = 1u << shift;
+
   std::vector<Frontier> raw_clusters;
   KeySet remaining = frontier_keys;
 
@@ -243,9 +320,9 @@ std::vector<Frontier> FrontierDetector::clusterFrontiers(
     while (!queue.empty()) {
       const auto current = queue.front();
       queue.pop();
-      cluster.points.push_back(tree.keyToCoord(current));
+      cluster.points.push_back(tree.keyToCoord(current, detection_depth));
 
-      for (const auto & neighbor : neighbors(current)) {
+      for (const auto & neighbor : neighborsAtStride(current, stride)) {
         const auto it = remaining.find(neighbor);
         if (it != remaining.end()) {
           queue.push(*it);
@@ -375,6 +452,12 @@ void FrontierDetector::splitCluster(
 std::vector<octomap::OcTreeKey> FrontierDetector::neighbors(
   const octomap::OcTreeKey & key) const
 {
+  return neighborsAtStride(key, 1u);
+}
+
+std::vector<octomap::OcTreeKey> FrontierDetector::neighborsAtStride(
+  const octomap::OcTreeKey & key, unsigned int stride) const
+{
   std::vector<octomap::OcTreeKey> result;
   result.reserve(26);
 
@@ -392,9 +475,9 @@ std::vector<octomap::OcTreeKey> FrontierDetector::neighbors(
           continue;
         }
 
-        const int nx = static_cast<int>(key.k[0]) + dx;
-        const int ny = static_cast<int>(key.k[1]) + dy;
-        const int nz = static_cast<int>(key.k[2]) + dz;
+        const int nx = static_cast<int>(key.k[0]) + dx * static_cast<int>(stride);
+        const int ny = static_cast<int>(key.k[1]) + dy * static_cast<int>(stride);
+        const int nz = static_cast<int>(key.k[2]) + dz * static_cast<int>(stride);
         if (nx < 0 || ny < 0 || nz < 0) {
           continue;
         }
@@ -419,10 +502,8 @@ bool FrontierDetector::isUnknownNeighbor(
 }
 
 bool FrontierDetector::isNearOccupied(
-  const octomap::OcTree & tree, const octomap::OcTreeKey & key,
-  const OccupiedGrid & grid)
+  const octomap::point3d & coord, const OccupiedGrid & grid)
 {
-  const octomap::point3d coord = tree.keyToCoord(key);
   const int cx = static_cast<int>(std::floor((coord.x() - grid.origin_x) / grid.resolution));
   const int cy = static_cast<int>(std::floor((coord.y() - grid.origin_y) / grid.resolution));
   const int cz = static_cast<int>(std::floor((coord.z() - grid.origin_z) / grid.resolution));

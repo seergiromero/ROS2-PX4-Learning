@@ -2,17 +2,22 @@
 <?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
 <package format="3">
   <name>frontier_detector_3d</name>
-  <version>0.0.0</version>
-  <description>Detect and visualize 3D exploration frontiers from an OctoMap.</description>
+  <version>0.1.0</version>
+  <description>Builds a 3D occupancy map from a LiDAR cloud and detects exploration frontiers on the same in-memory OctoMap, publishing them as RViz markers.</description>
   <maintainer email="sromerovalderas@gmail.com">Sergi Romero</maintainer>
   <license>MIT</license>
 
   <buildtool_depend>ament_cmake</buildtool_depend>
 
+  <depend>eigen</depend>
   <depend>geometry_msgs</depend>
   <depend>octomap</depend>
   <depend>octomap_msgs</depend>
   <depend>rclcpp</depend>
+  <depend>sensor_msgs</depend>
+  <depend>tf2</depend>
+  <depend>tf2_geometry_msgs</depend>
+  <depend>tf2_ros</depend>
   <depend>visualization_msgs</depend>
 
   <exec_depend>launch</exec_depend>
