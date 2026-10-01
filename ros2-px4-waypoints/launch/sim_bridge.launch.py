@@ -30,6 +30,9 @@ def generate_launch_description() -> LaunchDescription:
     declare_with_fast_lio = DeclareLaunchArgument(
         'with_fast_lio', default_value='true',
         description='Run Fast-LIO mapping')
+    declare_with_path_follower = DeclareLaunchArgument(
+        'with_path_follower', default_value='false',
+        description='Run the A* path follower (single owner of PX4 motion)')
     declare_use_sim_time = DeclareLaunchArgument(
         'use_sim_time', default_value='true',
         description='Use Gazebo simulation time')
@@ -117,7 +120,7 @@ def generate_launch_description() -> LaunchDescription:
                 # frontier (must be >= the parent cell size).
                 'clustering.kernel_bandwidth': 1.0,
                 # Drop single-cell clusters (LiDAR FOV rim noise).
-                'min_frontier_size': 2,
+                'min_frontier_size': 6,
                 # Cylindrical pose filter around the drone: ignore every
                 # frontier within 1 m in XY, and everything above/below it
                 # (|z - z_drone| > 0.6 m).
@@ -191,11 +194,41 @@ def generate_launch_description() -> LaunchDescription:
         output='screen',
         condition=IfCondition(LaunchConfiguration('with_takeoff'))))
 
+    # Path follower: follows /exploration/path and streams PX4 offboard
+    # setpoints. It is the SINGLE owner of /fmu/in/trajectory_setpoint, so do
+    # not enable with_offboard or with_takeoff at the same time. MicroXRCEAgent
+    # must already be running in another terminal.
+    actions.append(Node(
+        package=package,
+        executable='exploration_path_follower_node',
+        name='exploration_path_follower',
+        parameters=[
+            sim_time,
+            {
+                'map_frame': 'map',
+                'base_frame': 'base_link',
+                'odom_frame': 'odom',
+                'path_topic': '/exploration/path',
+                'octomap_topic': '/octomap_binary',
+                'lookahead_distance_m': 0.8,
+                'goal_tolerance_m': 0.5,
+                'collision_check': True,
+                'check_resolution_m': 0.2,
+                'path_timeout_s': 2.0,
+                'takeoff_height_m': LaunchConfiguration('takeoff_height_m'),
+                'setpoint_rate_hz': 50.0,
+                'stream_count': 20,
+            },
+        ],
+        output='screen',
+        condition=IfCondition(LaunchConfiguration('with_path_follower'))))
+
     return LaunchDescription([
         declare_with_offboard,
         declare_with_takeoff,
         declare_takeoff_height,
         declare_with_fast_lio,
+        declare_with_path_follower,
         declare_use_sim_time,
         *actions,
     ])

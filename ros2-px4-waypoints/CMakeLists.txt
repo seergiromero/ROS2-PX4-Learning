@@ -9,6 +9,8 @@ endif()
 find_package(ament_cmake REQUIRED)
 find_package(geometry_msgs REQUIRED)
 find_package(nav_msgs REQUIRED)
+find_package(octomap REQUIRED)
+find_package(octomap_msgs REQUIRED)
 find_package(px4_msgs REQUIRED)
 find_package(rclcpp REQUIRED)
 find_package(std_msgs REQUIRED)
@@ -49,11 +51,28 @@ ament_target_dependencies(map_odom_tf_bridge_node
   tf2_ros
 )
 
+# Follows the global A* path and streams PX4 offboard setpoints. It is the sole
+# owner of /fmu/in/trajectory_setpoint when running.
+add_executable(exploration_path_follower_node src/exploration_path_follower_node.cpp)
+target_include_directories(exploration_path_follower_node PRIVATE
+  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+  ${OCTOMAP_INCLUDE_DIRS})
+target_link_libraries(exploration_path_follower_node ${OCTOMAP_LIBRARIES})
+ament_target_dependencies(exploration_path_follower_node
+  nav_msgs
+  octomap_msgs
+  px4_msgs
+  rclcpp
+  tf2
+  tf2_ros
+)
+
 install(TARGETS
   offboard_waypoints_node
   offboard_takeoff_node
   px4_odometry_tf_node
   map_odom_tf_bridge_node
+  exploration_path_follower_node
   DESTINATION lib/${PROJECT_NAME}
 )
 
@@ -84,6 +103,12 @@ if(BUILD_TESTING)
   target_include_directories(test_frame_conversions PRIVATE
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>)
   ament_target_dependencies(test_frame_conversions tf2)
+
+  ament_add_gtest(test_path_follower test/test_path_follower.cpp)
+  target_include_directories(test_path_follower PRIVATE
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+    ${OCTOMAP_INCLUDE_DIRS})
+  target_link_libraries(test_path_follower ${OCTOMAP_LIBRARIES})
 endif()
 
 ament_package()
