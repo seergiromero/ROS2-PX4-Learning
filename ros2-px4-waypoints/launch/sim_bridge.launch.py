@@ -121,7 +121,7 @@ def generate_launch_description() -> LaunchDescription:
                 # Cylindrical pose filter around the drone: ignore every
                 # frontier within 1 m in XY, and everything above/below it
                 # (|z - z_drone| > 0.6 m).
-                'min_frontier_radius': 3.0,
+                'min_frontier_radius': 3.5,
                 'max_frontier_height': 4.0,
                 # Best frontier: information-gain goal selection.
                 'publish_best_frontier': True,
@@ -129,7 +129,7 @@ def generate_launch_description() -> LaunchDescription:
                 'k_gain': 100.0,
                 'lambda': 0.1386,
                 'pose_filter_marker_topic': 'frontier_pose_filter_marker',
-                'bounds_enabled': True,
+                'bounds_enabled': False,
                 'min_x': -6.0,
                 'max_x': 8.0,
                 'min_y': -4.0,
@@ -139,6 +139,23 @@ def generate_launch_description() -> LaunchDescription:
                 'publish_voxels': True,
                 'publish_centroids': True,
             },
+        ],
+        output='screen',
+        condition=IfCondition(LaunchConfiguration('with_fast_lio'))))
+
+    # Global planner: A* over the frontier detector's OctoMap. It subscribes to
+    # /octomap_binary and /exploration/goal, plans from the vehicle pose and
+    # publishes /exploration/path (plus a marker) for RViz and, later, the path
+    # follower. Its own config file is the source of truth for the A* settings.
+    actions.append(Node(
+        package='exploration_planner_3d',
+        executable='exploration_planner_node',
+        name='exploration_planner_node',
+        parameters=[
+            sim_time,
+            os.path.join(
+                get_package_share_directory('exploration_planner_3d'),
+                'config', 'exploration_planner.yaml'),
         ],
         output='screen',
         condition=IfCondition(LaunchConfiguration('with_fast_lio'))))

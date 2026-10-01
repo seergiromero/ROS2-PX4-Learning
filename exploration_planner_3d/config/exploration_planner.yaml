@@ -1,0 +1,41 @@
+# Configuration for the exploration_planner_3d node.
+#
+# Global 3D A* over the frontier detector's OctoMap. The node reads the map and
+# the exploration goal, plans from the vehicle pose and publishes the route.
+exploration_planner_node:
+  ros__parameters:
+    # Frames and topics -----------------------------------------------------
+    map_frame: map
+    base_frame: base_link
+    octomap_topic: /octomap_binary
+    goal_topic: /exploration/goal
+    path_topic: /exploration/path
+    path_marker_topic: /exploration/path_marker
+    planning_rate_hz: 1.0
+
+    # A* --------------------------------------------------------------------
+    # Grid cell size in metres (may differ from the octomap resolution).
+    resolution: 0.3
+    # Dilate occupied cells by this radius so the route keeps clearance.
+    inflation_radius: 0.3
+    # True lets the route cross unmapped space (needed to reach frontiers at the
+    # free/unknown boundary). False blocks unknown space entirely.
+    allow_unknown: true
+    # Cost multiplier for entering an unknown cell. > 1 biases the route toward
+    # known free space while still allowing it to bridge unmapped gaps.
+    unknown_cost: 3.0
+    max_nodes: 500000
+    heuristic_weight: 1.0
+    # Shortcut the raw grid path with line-of-sight segments.
+    simplify: true
+
+    # Search box (map frame) ------------------------------------------------
+    # When enabled the search is restricted to this box; when disabled it uses
+    # the octomap's own extent.
+    bounds_enabled: true
+    min_x: -6.0
+    max_x: 8.0
+    min_y: -4.0
+    max_y: 8.0
+    min_z: 0.3
+    max_z: 3.7
