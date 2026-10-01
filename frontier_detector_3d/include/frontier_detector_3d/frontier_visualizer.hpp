@@ -39,10 +39,11 @@ public:
   /// \param[in] frontiers Clusters to visualize.
   /// \param[in] frame_id TF frame of the coordinates.
   /// \param[in] stamp Timestamp for the markers.
-  /// \param[in] resolution Octree leaf size, used as the marker cube scale.
+  /// \param[in] cell_size Detection cell size (parent node size), used as the
+  ///            marker cube scale.
   void publish(
     const std::vector<Frontier> & frontiers, const std::string & frame_id,
-    const rclcpp::Time & stamp, double resolution);
+    const rclcpp::Time & stamp, double cell_size);
 
 private:
   rclcpp::Node & node_;

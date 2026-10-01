@@ -9,6 +9,7 @@
 #include "frontier_detector_3d/sensor_transform.hpp"
 
 #include <memory>
+#include <vector>
 
 namespace frontier_detector_3d
 {
@@ -78,14 +79,27 @@ public:
   /// Returns the number of nodes currently stored in the octree.
   std::size_t nodeCount() const {return tree_->size();}
 
+  /// Returns the leaf keys touched by the last `update()`.
+  ///
+  /// Mirrors `OctomapServer::trackChanges()` of the reference implementation:
+  /// the set is captured from OctoMap change detection and cleared at the end
+  /// of every `update()`, so it always describes exactly the cells modified by
+  /// the most recent cloud.
+  const std::vector<octomap::OcTreeKey> & changedKeys() const {return changed_keys_;}
+
   /// Clears the map to its initial empty state.
-  void clear() {tree_->clear();}
+  void clear()
+  {
+    tree_->clear();
+    changed_keys_.clear();
+  }
 
 private:
   std::unique_ptr<octomap::OcTree> tree_;
   double max_range_;
   bool compress_;
   std::size_t point_subsample_;
+  std::vector<octomap::OcTreeKey> changed_keys_;
 };
 
 }  // namespace frontier_detector_3d

@@ -23,9 +23,10 @@ PipelineResult FrontierPipeline::process(
   // 1) Grow the map from the fresh cloud.
   mapper_.update(cloud, sensor_to_map);
 
-  // 2) Detect frontiers on the SAME tree that was just updated.
+  // 2) Detect frontiers on the SAME tree that was just updated, restricting the
+  //    frontier test to the cells this update changed (incremental detection).
   PipelineResult result;
-  result.frontiers = detector_.detect(mapper_.tree());
+  result.frontiers = detector_.detect(mapper_.tree(), mapper_.changedKeys());
   result.frame_id = frame_id;
   result.stamp = stamp;
   return result;

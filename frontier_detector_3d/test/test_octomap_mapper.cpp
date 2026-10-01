@@ -119,6 +119,18 @@ TEST(OctomapMapper, HonorsMaxRange)
   EXPECT_FALSE(mapper.tree().isNodeOccupied(clamped));
 }
 
+TEST(OctomapMapper, ReportsChangedKeysPerUpdate)
+{
+  OctomapMapper mapper(0.1);
+
+  ASSERT_TRUE(mapper.update(makeCloud({{1.0, 0.0, 0.0}}), SensorTransform{}));
+  EXPECT_FALSE(mapper.changedKeys().empty());
+
+  // A second update starts a fresh change set.
+  ASSERT_TRUE(mapper.update(makeCloud({{0.0, 0.0, 1.0}}), SensorTransform{}));
+  EXPECT_FALSE(mapper.changedKeys().empty());
+}
+
 TEST(OctomapMapper, AppliesTranslation)
 {
   OctomapMapper mapper(0.1);

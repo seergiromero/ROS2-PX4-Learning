@@ -87,10 +87,13 @@ def generate_launch_description() -> LaunchDescription:
         }.items(),
         condition=IfCondition(LaunchConfiguration('with_fast_lio'))))
 
-    # Frontier detector. It now owns the OctoMap itself: it subscribes to the
-    # raw LiDAR cloud (/lidar_3d/points), updates an in-memory octree and runs
-    # frontier detection on that same tree, so no octomap_server round-trip is
-    # needed. Both map and frontiers are published from the same update.
+    # Frontier detector (Batinovic et al., RA-L 2021). It owns the OctoMap: it
+    # subscribes to the raw LiDAR cloud, updates an in-memory octree and runs
+    # the multi-resolution frontier detection + mean-shift clustering on that
+    # same tree. The algorithm fixes the 26-neighbourhood, the
+    # free+unknown-no-occupied test and the incremental update, so the only
+    # knobs are the octree resolution, the detection level, the mean-shift
+    # bandwidth and the exploration box.
     actions.append(Node(
         package='frontier_detector_3d',
         executable='frontier_detector_node',
@@ -104,19 +107,17 @@ def generate_launch_description() -> LaunchDescription:
                 'use_latest_transform': False,
                 'publish_map': True,
                 'process_rate_hz': 0.5,
-                'resolution': 0.2,
+                'resolution': 0.3,
                 'point_subsample': 3,
-                'detection_resolution': 0.3,
                 'sensor_model.max_range': 10.0,
-                'min_frontier_size': 20,
-                'max_frontiers': 30,
-                'connectivity': 6,
-                'max_dist_to_occupied': 0.5,
-                'cluster_size_xy': 3.0,
-                'cluster_size_z': 2.0,
-                'ground_z': 0.8,
-                'min_free_neighbors': 6,
-                'min_unknown_neighbors': 6,
+                # Multi-resolution level: octomap depth 16 is the finest leaf,
+                # 15 makes one detection cell 2 x resolution (0.6 m here).
+                'exploration_depth': 15,
+                # Mean-shift bandwidth: higher merges more cells into one
+                # frontier (must be >= the parent cell size).
+                'clustering.kernel_bandwidth': 1.0,
+                # Drop single-cell clusters (LiDAR FOV rim noise).
+                'min_frontier_size': 15,
                 'bounds_enabled': False,
                 'min_x': -6.0,
                 'max_x': 6.0,

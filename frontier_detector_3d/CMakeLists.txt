@@ -20,6 +20,7 @@ find_package(visualization_msgs REQUIRED)
 add_executable(frontier_detector_node
   src/octomap_mapper.cpp
   src/frontier_pipeline.cpp
+  src/mean_shift.cpp
   src/frontier_detector.cpp
   src/frontier_visualizer.cpp
   src/frontier_detector_node.cpp
@@ -62,6 +63,7 @@ if(BUILD_TESTING)
   ament_lint_auto_find_test_dependencies()
 
   ament_add_gtest(test_frontier_detector
+    src/mean_shift.cpp
     src/frontier_detector.cpp
     test/test_frontier_detector.cpp
   )
@@ -70,6 +72,9 @@ if(BUILD_TESTING)
       $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
       ${OCTOMAP_INCLUDE_DIRS}
       ${EIGEN3_INCLUDE_DIR}
+    )
+    ament_target_dependencies(test_frontier_detector
+      geometry_msgs
     )
     target_link_libraries(test_frontier_detector
       ${OCTOMAP_LIBRARIES}
@@ -97,6 +102,7 @@ if(BUILD_TESTING)
   ament_add_gtest(test_frontier_pipeline
     src/octomap_mapper.cpp
     src/frontier_pipeline.cpp
+    src/mean_shift.cpp
     src/frontier_detector.cpp
     test/test_frontier_pipeline.cpp
   )

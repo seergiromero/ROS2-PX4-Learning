@@ -22,15 +22,18 @@ FrontierVisualizer::FrontierVisualizer(
 
 void FrontierVisualizer::publish(
   const std::vector<Frontier> & frontiers, const std::string & frame_id,
-  const rclcpp::Time & stamp, double resolution)
+  const rclcpp::Time & stamp, double cell_size)
 {
   visualization_msgs::msg::MarkerArray markers;
 
   // Clear stale markers from previous cycles before adding the new ones.
+  // RViz2's DELETEALL clears only the namespace carried by the marker, so the
+  // namespace is left EMPTY here to clear the whole topic (voxels AND
+  // centroids). Using ns="frontiers" would leave old centroids on screen.
   visualization_msgs::msg::Marker clear;
   clear.header.frame_id = frame_id;
   clear.header.stamp = stamp;
-  clear.ns = "frontiers";
+  clear.ns = "";
   clear.id = 0;
   clear.action = visualization_msgs::msg::Marker::DELETEALL;
   markers.markers.push_back(std::move(clear));
@@ -52,9 +55,9 @@ void FrontierVisualizer::publish(
       voxels.id = static_cast<int32_t>(id);
       voxels.type = visualization_msgs::msg::Marker::CUBE_LIST;
       voxels.action = visualization_msgs::msg::Marker::ADD;
-      voxels.scale.x = resolution;
-      voxels.scale.y = resolution;
-      voxels.scale.z = resolution;
+      voxels.scale.x = cell_size;
+      voxels.scale.y = cell_size;
+      voxels.scale.z = cell_size;
       voxels.color.r = hue;
       voxels.color.g = 0.8f;
       voxels.color.b = 1.0f - hue;
@@ -71,7 +74,8 @@ void FrontierVisualizer::publish(
     }
 
     if (publish_centroids_) {
-      // Centroid of the cluster, a representative waypoint candidate.
+      // Geometric center (mean) of this cluster's voxels, so the sphere sits in
+      // the middle of the same-colored cube group.
       double cx = 0.0;
       double cy = 0.0;
       double cz = 0.0;
@@ -80,9 +84,10 @@ void FrontierVisualizer::publish(
         cy += point.y();
         cz += point.z();
       }
-      cx /= static_cast<double>(cluster.points.size());
-      cy /= static_cast<double>(cluster.points.size());
-      cz /= static_cast<double>(cluster.points.size());
+      const double inv = 1.0 / static_cast<double>(cluster.points.size());
+      cx *= inv;
+      cy *= inv;
+      cz *= inv;
 
       visualization_msgs::msg::Marker centroid;
       centroid.header.frame_id = frame_id;
@@ -91,12 +96,13 @@ void FrontierVisualizer::publish(
       centroid.id = static_cast<int32_t>(id);
       centroid.type = visualization_msgs::msg::Marker::SPHERE;
       centroid.action = visualization_msgs::msg::Marker::ADD;
-      const double scale = std::max(0.2, 2.0 * resolution);
+      const double scale = std::max(0.2, 2.0 * cell_size);
       centroid.scale.x = scale;
       centroid.scale.y = scale;
       centroid.scale.z = scale;
+      // Same color as the cluster's voxels.
       centroid.color.r = hue;
-      centroid.color.g = 0.2f;
+      centroid.color.g = 0.8f;
       centroid.color.b = 1.0f - hue;
       centroid.color.a = 1.0f;
       centroid.pose.position.x = cx;

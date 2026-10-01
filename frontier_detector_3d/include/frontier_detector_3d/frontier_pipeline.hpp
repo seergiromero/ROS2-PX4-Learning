@@ -21,7 +21,7 @@ namespace frontier_detector_3d
 /// of the same cycle, so the map and the frontiers can never drift apart.
 struct PipelineResult
 {
-  /// Clusters detected on the freshly updated tree, sorted by descending size.
+  /// Mean-shift frontier clusters detected on the freshly updated tree.
   std::vector<Frontier> frontiers;
 
   /// TF frame the tree and the frontier coordinates are expressed in.

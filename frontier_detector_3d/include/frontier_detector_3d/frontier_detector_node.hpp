@@ -71,6 +71,7 @@ private:
   std::string map_frame_;
   bool publish_map_;
   bool use_latest_transform_;
+  double frontier_cell_size_ {0.0};
 };
 
 }  // namespace frontier_detector_3d

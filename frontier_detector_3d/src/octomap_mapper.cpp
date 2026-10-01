@@ -24,6 +24,10 @@ OctomapMapper::OctomapMapper(
   tree_->setProbMiss(prob_miss);
   tree_->setClampingThresMin(prob_min);
   tree_->setClampingThresMax(prob_max);
+  // Record every updated leaf key so the frontier detector can run
+  // incrementally on the cells that actually changed, as the reference
+  // `OctomapServer::trackChanges()` does.
+  tree_->enableChangeDetection(true);
 }
 
 bool OctomapMapper::update(
@@ -103,6 +107,16 @@ bool OctomapMapper::update(
   if (compress_) {
     tree_->prune();
   }
+
+  // Snapshot the changed leaves for this update, then start a new change set.
+  // OctoMap's change detection is a leaf-key set, exactly what the incremental
+  // frontier test consumes.
+  changed_keys_.clear();
+  for (auto it = tree_->changedKeysBegin(), end = tree_->changedKeysEnd(); it != end; ++it) {
+    changed_keys_.push_back(it->first);
+  }
+  tree_->resetChangeDetection();
+
   return true;
 }
 

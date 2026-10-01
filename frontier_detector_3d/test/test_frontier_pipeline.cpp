@@ -4,6 +4,7 @@
 
 #include <sensor_msgs/msg/point_cloud2.hpp>
 
+#include <array>
 #include <cstdint>
 #include <string>
 #include <vector>
@@ -15,69 +16,80 @@
 
 namespace
 {
-using frontier_detector_3d::Connectivity;
 using frontier_detector_3d::FrontierDetector;
 using frontier_detector_3d::FrontierPipeline;
 using frontier_detector_3d::OctomapMapper;
 using frontier_detector_3d::SensorTransform;
 
-/// Inserts a solid free block at full depth (keys min..max inclusive).
-void insertFreeBlock(
-  octomap::OcTree & tree, const octomap::OcTreeKey & min_key,
-  const octomap::OcTreeKey & max_key)
-{
-  for (uint16_t x = min_key.k[0]; x <= max_key.k[0]; ++x) {
-    for (uint16_t y = min_key.k[1]; y <= max_key.k[1]; ++y) {
-      for (uint16_t z = min_key.k[2]; z <= max_key.k[2]; ++z) {
-        tree.updateNode(octomap::OcTreeKey(x, y, z), false);
-      }
-    }
-  }
-}
-
-sensor_msgs::msg::PointCloud2 makeEmptyCloud()
+/// Builds a PointCloud2 holding one XYZ point per entry in `points`.
+sensor_msgs::msg::PointCloud2 makeCloud(
+  const std::vector<std::array<float, 3>> & points)
 {
   sensor_msgs::msg::PointCloud2 cloud;
   cloud.header.frame_id = "lidar";
   cloud.height = 1;
-  cloud.width = 0;
+  cloud.width = static_cast<uint32_t>(points.size());
+  cloud.is_bigendian = false;
+  cloud.is_dense = true;
   cloud.point_step = 12;
+
+  sensor_msgs::msg::PointField fx;
+  fx.name = "x";
+  fx.offset = 0;
+  fx.datatype = sensor_msgs::msg::PointField::FLOAT32;
+  fx.count = 1;
+  sensor_msgs::msg::PointField fy = fx;
+  fy.name = "y";
+  fy.offset = 4;
+  sensor_msgs::msg::PointField fz = fx;
+  fz.name = "z";
+  fz.offset = 8;
+  cloud.fields = {fx, fy, fz};
+
+  cloud.data.resize(points.size() * cloud.point_step);
+  for (std::size_t i = 0; i < points.size(); ++i) {
+    float * p = reinterpret_cast<float *>(cloud.data.data() + i * cloud.point_step);
+    p[0] = points[i][0];
+    p[1] = points[i][1];
+    p[2] = points[i][2];
+  }
   return cloud;
+}
+
+sensor_msgs::msg::PointCloud2 makeEmptyCloud()
+{
+  return makeCloud({});
 }
 
 }  // namespace
 
 TEST(FrontierPipeline, DetectsFrontiersOnTheJustUpdatedTree)
 {
-  OctomapMapper mapper(0.1);
-  FrontierDetector detector(1, 10, Connectivity::k26);
+  OctomapMapper mapper(0.5);
+  FrontierDetector detector(15, 1.0);
   FrontierPipeline pipeline(mapper, detector);
 
-  // A free block fully surrounded by unknown space: every free voxel on its
-  // surface borders unknown voxels, so the pipeline must report a cluster.
-  insertFreeBlock(mapper.mutableTree(), octomap::OcTreeKey(40, 40, 40),
-    octomap::OcTreeKey(43, 43, 43));
+  // A single ray clears free space up to an occupied endpoint. The free cells
+  // along the beam border unknown space, so the pipeline must report a cluster
+  // built from the cells this very update changed.
+  const auto cloud = makeCloud({{5.0f, 0.0f, 0.0f}});
 
   const rclcpp::Time stamp(123, 0);
-  const auto result = pipeline.process(makeEmptyCloud(), SensorTransform{}, "map", stamp);
+  const auto result = pipeline.process(cloud, SensorTransform{}, "map", stamp);
 
   EXPECT_EQ(result.frame_id, "map");
   EXPECT_EQ(result.stamp, stamp);
   EXPECT_FALSE(result.frontiers.empty());
-
-  // The cluster consists of the shell of the 4x4x4 block: 4^3 - 2^3 = 56
-  // voxels, matching the detector's pruned-free-leaf test.
-  ASSERT_EQ(result.frontiers.size(), 1u);
-  EXPECT_EQ(result.frontiers[0].size(), 56u);
 }
 
 TEST(FrontierPipeline, ReportsEmptyWhenTreeIsEmpty)
 {
-  OctomapMapper mapper(0.1);
-  FrontierDetector detector(1, 10, Connectivity::k26);
+  OctomapMapper mapper(0.5);
+  FrontierDetector detector(15, 1.0);
   FrontierPipeline pipeline(mapper, detector);
 
-  const auto result = pipeline.process(makeEmptyCloud(), SensorTransform{}, "map", rclcpp::Time(0));
+  const auto result = pipeline.process(
+    makeEmptyCloud(), SensorTransform{}, "map", rclcpp::Time(0));
   EXPECT_TRUE(result.frontiers.empty());
   EXPECT_EQ(result.frame_id, "map");
 }

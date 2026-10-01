@@ -2,7 +2,9 @@
 
 #include <octomap_msgs/conversions.h>
 
+#include <algorithm>
 #include <chrono>
+#include <cmath>
 #include <stdexcept>
 #include <utility>
 
@@ -22,30 +24,26 @@ FrontierDetectorNode::FrontierDetectorNode()
   const double process_rate_hz = declare_parameter<double>("process_rate_hz", 2.0);
   use_latest_transform_ = declare_parameter<bool>("use_latest_transform", false);
 
-  // --- OctoMap model -----------------------------------------------------
-  const double resolution = declare_parameter<double>("resolution", 0.1);
-  const double max_range = declare_parameter<double>("sensor_model.max_range", 15.0);
-  const double prob_hit = declare_parameter<double>("sensor_model.hit", 0.7);
-  const double prob_miss = declare_parameter<double>("sensor_model.miss", 0.4);
-  const double prob_min = declare_parameter<double>("sensor_model.min", 0.12);
-  const double prob_max = declare_parameter<double>("sensor_model.max", 0.97);
+  // --- OctoMap model (standard OctoMap parameters) -----------------------
+  const double resolution = declare_parameter<double>("resolution", 0.5);
+  const double max_range = declare_parameter<double>("sensor_model.max_range", 10.0);
   const bool compress_map = declare_parameter<bool>("compress_map", true);
   const int point_subsample = declare_parameter<int>("point_subsample", 1);
   publish_map_ = declare_parameter<bool>("publish_map", true);
 
-  // --- Frontier detection -------------------------------------------------
-  const int min_frontier_size = declare_parameter<int>("min_frontier_size", 15);
-  const int max_frontiers = declare_parameter<int>("max_frontiers", 100);
-  const auto connectivity = static_cast<Connectivity>(
-    declare_parameter<int>("connectivity", 6));
-  const double max_dist_to_occupied = declare_parameter<double>(
-    "max_dist_to_occupied", 0.5);
-  const double cluster_size_xy = declare_parameter<double>("cluster_size_xy", 3.0);
-  const double cluster_size_z = declare_parameter<double>("cluster_size_z", 2.0);
-  const double ground_z = declare_parameter<double>("ground_z", 0.4);
-  const double detection_resolution = declare_parameter<double>("detection_resolution", 0.0);
-  const int min_free_neighbors = declare_parameter<int>("min_free_neighbors", 0);
-  const int min_unknown_neighbors = declare_parameter<int>("min_unknown_neighbors", 1);
+  // --- Frontier detection (Batinovic et al., RA-L 2021) -------------------
+  // The paper only exposes the multi-resolution octree level, the mean-shift
+  // bandwidth and the exploration bounding box. Everything else is fixed by the
+  // algorithm (26-neighbourhood, free+unknown-no-occupied test, incremental
+  // update), so it is deliberately not configurable here.
+  const int exploration_depth = declare_parameter<int>("exploration_depth", 16);
+  const double kernel_bandwidth =
+    declare_parameter<double>("clustering.kernel_bandwidth", 1.0);
+  // Noise filter (not in the paper): clusters smaller than this many parent
+  // cells are dropped. 1 disables it and restores the reference behaviour.
+  const int min_frontier_size = declare_parameter<int>("min_frontier_size", 1);
+  const unsigned int detection_depth =
+    static_cast<unsigned int>(std::max(exploration_depth, 0));
 
   // Exploration box. Disabled unless explicitly requested, so the detector can
   // still be used in unbounded outdoor scenarios.
@@ -64,12 +62,9 @@ FrontierDetectorNode::FrontierDetectorNode()
 
   // Fail fast on an invalid configuration instead of emitting empty markers.
   try {
-    (void)FrontierDetector(
-      min_frontier_size, max_frontiers, connectivity, max_dist_to_occupied,
-      cluster_size_xy, cluster_size_z, ground_z, bounds, detection_resolution,
-      min_free_neighbors, min_unknown_neighbors);
+    (void)FrontierDetector(detection_depth, kernel_bandwidth, bounds, min_frontier_size);
     mapper_ = std::make_unique<OctomapMapper>(
-      resolution, max_range, prob_hit, prob_miss, prob_min, prob_max, compress_map,
+      resolution, max_range, 0.7, 0.4, 0.12, 0.97, compress_map,
       static_cast<std::size_t>(point_subsample));
   } catch (const std::invalid_argument & e) {
     RCLCPP_FATAL(get_logger(), "Invalid configuration: %s", e.what());
@@ -77,10 +72,13 @@ FrontierDetectorNode::FrontierDetectorNode()
   }
 
   pipeline_ = std::make_unique<FrontierPipeline>(
-    *mapper_, FrontierDetector(
-      min_frontier_size, max_frontiers, connectivity, max_dist_to_occupied,
-      cluster_size_xy, cluster_size_z, ground_z, bounds, detection_resolution,
-      min_free_neighbors, min_unknown_neighbors));
+    *mapper_, FrontierDetector(detection_depth, kernel_bandwidth, bounds, min_frontier_size));
+
+  // Physical size of one detection cell: the octomap leaf doubled once per
+  // level between the leaf and `exploration_depth`.
+  const int shift = std::max(
+    0, static_cast<int>(mapper_->tree().getTreeDepth()) - static_cast<int>(detection_depth));
+  frontier_cell_size_ = resolution * std::pow(2.0, static_cast<double>(shift));
   visualizer_ = std::make_unique<FrontierVisualizer>(
     *this, frontier_topic, publish_voxels, publish_centroids);
 
@@ -111,15 +109,12 @@ FrontierDetectorNode::FrontierDetectorNode()
   RCLCPP_INFO(
     get_logger(),
     "Listening to %s (frame %s), publishing frontiers on %s "
-    "(process_rate_hz=%.1f, resolution=%.2f, point_subsample=%d, detection_resolution=%.2f, "
-    "min_frontier_size=%d, max_frontiers=%d, connectivity=%d, max_dist_to_occupied=%.2f, "
-    "cluster_size_xy=%.2f, cluster_size_z=%.2f, ground_z=%.2f, bounds_enabled=%d, "
-    "min_free_neighbors=%d, min_unknown_neighbors=%d, publish_map=%s)",
+    "(process_rate_hz=%.1f, resolution=%.2f, point_subsample=%d, "
+    "exploration_depth=%u, kernel_bandwidth=%.2f, min_frontier_size=%d, "
+    "bounds_enabled=%d, publish_map=%s)",
     cloud_topic.c_str(), map_frame_.c_str(), frontier_topic.c_str(), process_rate_hz,
-    resolution, point_subsample, detection_resolution, min_frontier_size, max_frontiers,
-    static_cast<int>(connectivity), max_dist_to_occupied, cluster_size_xy, cluster_size_z,
-    ground_z, static_cast<int>(bounds.enabled), min_free_neighbors, min_unknown_neighbors,
-    publish_map_ ? "true" : "false");
+    resolution, point_subsample, detection_depth, kernel_bandwidth, min_frontier_size,
+    static_cast<int>(bounds.enabled), publish_map_ ? "true" : "false");
 }
 
 void FrontierDetectorNode::cloudCallback(
@@ -174,8 +169,7 @@ void FrontierDetectorNode::processCycle()
     publishOctomap(cloud->header.stamp);
   }
   visualizer_->publish(
-    result.frontiers, result.frame_id, result.stamp,
-    mapper_->tree().getResolution());
+    result.frontiers, result.frame_id, result.stamp, frontier_cell_size_);
 
   // One-line per cycle so the operator can see exactly where the pipeline is.
   RCLCPP_INFO_THROTTLE(

@@ -1,13 +1,16 @@
 # Configuration for the frontier_detector_3d node.
 #
-# The node owns an in-memory OctoMap: it subscribes to the raw LiDAR cloud,
-# transforms it into `map_frame`, updates the octree and runs frontier
-# detection on that same tree every `process_rate_hz` cycles.
+# This mirrors the configuration surface of the reference implementation of
+# Batinovic et al., "A Multi-Resolution Frontier-Based Planner for Autonomous
+# 3D Exploration" (IEEE RA-L 2021), larics/uav_frontier_exploration_3d.
 #
-# Tune `resolution` and `detection_resolution` first: together they dominate
-# how many voxels the detector has to examine. `resolution` is the map grain;
-# `detection_resolution` is the coarser grid used for frontier detection and
-# clustering (multi-resolution), which is the main cost lever on large maps.
+# The frontier algorithm itself is fixed (incremental changed-cell detection,
+# 26-neighbourhood, free cell with unknown neighbour and no occupied neighbour)
+# and is not configurable. Only the four parameters below shape the result:
+#   - resolution          octomap leaf size
+#   - exploration_depth   octree level used for detection/clustering
+#   - kernel_bandwidth    mean-shift bandwidth
+#   - bounds_*            exploration bounding box
 frontier_detector_3d:
   ros__parameters:
     # Inputs / outputs ------------------------------------------------------
@@ -22,52 +25,26 @@ frontier_detector_3d:
     process_rate_hz: 0.5
 
     # OctoMap model ---------------------------------------------------------
-    # 0.30 m is a good trade-off for UAV frontier exploration: ~27x fewer
-    # voxels than 0.10 m. point_subsample=3 processes 1 of every 3 points,
-    # cutting ray-casting cost ~9x on a dense grid scan.
     resolution: 0.3
     point_subsample: 3
-    # `max_range` is the hard limit of the map: rays mark free / create
-    # occupancy only up to this distance from the sensor. The raw LiDAR reaches
-    # 30 m, so a value smaller than the scene size makes the map stop short of
-    # where the laser actually points. It is also the free-space clearing
-    # distance, so raising it costs time.
     sensor_model:
-      max_range: 15.0
-      hit: 0.7
-      miss: 0.4
-      min: 0.12
-      max: 0.97
+      # Hard map limit / free-space clearing distance in metres.
+      max_range: 10.0
     compress_map: true
 
-    # Frontier detection ----------------------------------------------------
-    # Keep clusters meaningful and the output light: fewer, bigger clusters.
-    min_frontier_size: 20
-    max_frontiers: 30
-    connectivity: 6
-    # Surface-proximity filter. Keep frontiers within this distance of a real
-    # obstacle. This is what removes the LiDAR FOV rim floating in mid air
-    # (the upper cone edge, with no ceiling to hit). With the local shape
-    # filters below now handling the wall slivers, a moderate radius keeps the
-    # useful frontiers (doorways, occlusions, room edges) without carpeting
-    # walls. Set negative to disable.
-    max_dist_to_occupied: 1.5
-    cluster_size_xy: 3.0
-    cluster_size_z: 2.0
-    ground_z: 0.4
-    # Detect and cluster at 0.60 m instead of the 0.30 m map grain. Cells get
-    # 4x coarser per axis (one octree level = 2x), so the detector examines and
-    # clusters far fewer cells. 0 disables it and detects at the map grain.
-    detection_resolution: 0.6
-    # Local shape filters (out of the 26 neighbours of a frontier cell):
-    #  - min_free_neighbors: reject isolated free slivers in mid air (single
-    #    laser beams) that border unknown but are not solid observed space.
-    #  - min_unknown_neighbors: reject free cells that only touch thin unknown
-    #    slivers between beams (the artefacts that carpet walls). Real
-    #    frontiers facing a large unexplored region pass this easily.
-    # Raise both for cleaner output; lower them if useful frontiers disappear.
-    min_free_neighbors: 6
-    min_unknown_neighbors: 6
+    # Multi-resolution detection --------------------------------------------
+    # Octree level at which parent frontier cells are searched and clustered.
+    # Octomap depth 16 is the finest leaf level; each step coarser halves the
+    # detection resolution. Depth 15 -> cells of 2 x resolution = 0.6 m.
+    exploration_depth: 15
+    # Gaussian mean-shift bandwidth in metres. Higher bandwidth gives fewer,
+    # larger clusters. Must be >= the parent cell size.
+    clustering:
+      kernel_bandwidth: 1.0
+    # Noise filter (NOT in the paper): drop clusters with fewer than this many
+    # parent cells. 2 removes the single-cell bubbles that appear at the LiDAR
+    # FOV rim. Set to 1 to restore the exact reference behaviour.
+    min_frontier_size: 2
 
     # Exploration box (map frame) -------------------------------------------
     # Frontiers outside this box are discarded, so no goals are published in
@@ -81,7 +58,5 @@ frontier_detector_3d:
     max_z: 3.5
 
     # Visualization ---------------------------------------------------------
-    # publish_voxels is debug-only: one cube per frontier voxel can saturate
-    # RViz on large maps. Keep it false and rely on publish_centroids.
-    publish_voxels: true
+    publish_voxels: false
     publish_centroids: true
