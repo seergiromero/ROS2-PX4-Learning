@@ -117,14 +117,25 @@ def generate_launch_description() -> LaunchDescription:
                 # frontier (must be >= the parent cell size).
                 'clustering.kernel_bandwidth': 1.0,
                 # Drop single-cell clusters (LiDAR FOV rim noise).
-                'min_frontier_size': 15,
-                'bounds_enabled': False,
+                'min_frontier_size': 2,
+                # Cylindrical pose filter around the drone: ignore every
+                # frontier within 1 m in XY, and everything above/below it
+                # (|z - z_drone| > 0.6 m).
+                'min_frontier_radius': 3.0,
+                'max_frontier_height': 4.0,
+                # Best frontier: information-gain goal selection.
+                'publish_best_frontier': True,
+                'box_length': 5.0,
+                'k_gain': 100.0,
+                'lambda': 0.1386,
+                'pose_filter_marker_topic': 'frontier_pose_filter_marker',
+                'bounds_enabled': True,
                 'min_x': -6.0,
-                'max_x': 6.0,
+                'max_x': 8.0,
                 'min_y': -4.0,
-                'max_y': 4.0,
+                'max_y': 8.0,
                 'min_z': 0.3,
-                'max_z': 3.5,
+                'max_z': 3.7,
                 'publish_voxels': True,
                 'publish_centroids': True,
             },

@@ -43,6 +43,36 @@ Visualization Manager:
         Reliability Policy: Reliable
         Value: /exploration/frontiers
       Value: true
+    - Class: rviz_default_plugins/Marker
+      Enabled: true
+      Name: Best Frontier
+      Topic:
+        Depth: 5
+        Durability Policy: Transient Local
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /best_frontier_marker
+      Value: true
+    - Class: rviz_default_plugins/Pose
+      Enabled: true
+      Name: Exploration Goal
+      Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /exploration/goal
+      Value: true
+    - Class: rviz_default_plugins/Marker
+      Enabled: true
+      Name: Frontier Pose Filter
+      Topic:
+        Depth: 5
+        Durability Policy: Transient Local
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /frontier_pose_filter_marker
+      Value: true
     - Class: rviz_default_plugins/RobotModel
       Enabled: true
       Name: Drone

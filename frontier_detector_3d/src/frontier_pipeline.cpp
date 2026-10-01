@@ -18,7 +18,8 @@ PipelineResult FrontierPipeline::process(
   const sensor_msgs::msg::PointCloud2 & cloud,
   const SensorTransform & sensor_to_map,
   const std::string & frame_id,
-  const rclcpp::Time & stamp)
+  const rclcpp::Time & stamp,
+  const octomap::point3d * current_position)
 {
   // 1) Grow the map from the fresh cloud.
   mapper_.update(cloud, sensor_to_map);
@@ -26,7 +27,8 @@ PipelineResult FrontierPipeline::process(
   // 2) Detect frontiers on the SAME tree that was just updated, restricting the
   //    frontier test to the cells this update changed (incremental detection).
   PipelineResult result;
-  result.frontiers = detector_.detect(mapper_.tree(), mapper_.changedKeys());
+  result.frontiers = detector_.detect(
+    mapper_.tree(), mapper_.changedKeys(), current_position);
   result.frame_id = frame_id;
   result.stamp = stamp;
   return result;

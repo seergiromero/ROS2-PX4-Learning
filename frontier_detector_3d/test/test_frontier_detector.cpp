@@ -274,6 +274,51 @@ TEST(Bounds, RemovesFrontiersOutsideBox)
   EXPECT_NEAR(clusters[0].representative.x(), 1.0, 0.3);
 }
 
+TEST(PoseFilter, DropsCellsNearVehicleAndOffAltitude)
+{
+  octomap::OcTree tree = makeTree();
+  // Near the vehicle in XY (dropped by the radius).
+  tree.updateNode(octomap::OcTreeKey(0, 0, 0), false, true);
+  tree.updateNode(octomap::OcTreeKey(1, 0, 0), false, true);
+  // Far in XY, at flight altitude (kept).
+  tree.updateNode(octomap::OcTreeKey(50, 0, 0), false, true);
+  tree.updateNode(octomap::OcTreeKey(51, 0, 0), false, true);
+  // Far in XY but high above (dropped by the height band).
+  tree.updateNode(octomap::OcTreeKey(50, 0, 50), false, true);
+  tree.updateNode(octomap::OcTreeKey(51, 0, 50), false, true);
+
+  FrontierDetector detector(16, 0.5, Bounds3D(), 1, 1.0, 0.6);
+  const std::vector<octomap::OcTreeKey> changed = {
+    octomap::OcTreeKey(0, 0, 0), octomap::OcTreeKey(1, 0, 0),
+    octomap::OcTreeKey(50, 0, 0), octomap::OcTreeKey(51, 0, 0),
+    octomap::OcTreeKey(50, 0, 50), octomap::OcTreeKey(51, 0, 50)};
+
+  // The vehicle sits at the world coordinate of key (0,0,0); octree keys map to
+  // coordinates centred on the tree's address space, so this is where the near
+  // pair is.
+  const octomap::point3d vehicle = tree.keyToCoord(octomap::OcTreeKey(0, 0, 0));
+  const auto clusters = detector.detect(tree, changed, &vehicle);
+  ASSERT_EQ(clusters.size(), 1u);
+  EXPECT_EQ(clusters[0].size(), 2u);
+
+  const auto & chosen = clusters[0].representative;
+  const double dx = chosen.x() - vehicle.x();
+  const double dy = chosen.y() - vehicle.y();
+  const double dz = chosen.z() - vehicle.z();
+  EXPECT_GT(std::hypot(dx, dy), 1.0);   // beyond the exclusion radius
+  EXPECT_LT(std::abs(dz), 0.6);         // inside the altitude band
+
+  // The pose filter is a temporary view: after the vehicle moves to the
+  // previously visible pair, that pair must reappear without a new map change.
+  const octomap::point3d moved_vehicle =
+    tree.keyToCoord(octomap::OcTreeKey(50, 0, 0));
+  const auto moved_clusters = detector.detect(tree, {}, &moved_vehicle);
+  ASSERT_EQ(moved_clusters.size(), 1u);
+  EXPECT_EQ(moved_clusters[0].size(), 2u);
+  const double moved_dx = moved_clusters[0].representative.x() - moved_vehicle.x();
+  EXPECT_GT(std::abs(moved_dx), 1.0);
+}
+
 TEST(Constructor, RejectsNonPositiveBandwidth)
 {
   EXPECT_THROW(FrontierDetector(16, 0.0), std::invalid_argument);

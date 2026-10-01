@@ -1,13 +1,16 @@
 #ifndef FRONTIER_DETECTOR_3D__FRONTIER_DETECTOR_NODE_HPP_
 #define FRONTIER_DETECTOR_3D__FRONTIER_DETECTOR_NODE_HPP_
 
+#include <geometry_msgs/msg/pose_stamped.hpp>
 #include <octomap_msgs/msg/octomap.hpp>
 #include <rclcpp/rclcpp.hpp>
 #include <sensor_msgs/msg/point_cloud2.hpp>
 #include <tf2_ros/buffer.h>
 #include <tf2_ros/create_timer_ros.hpp>
 #include <tf2_ros/transform_listener.h>
+#include <visualization_msgs/msg/marker.hpp>
 
+#include "frontier_detector_3d/best_frontier.hpp"
 #include "frontier_detector_3d/frontier_detector.hpp"
 #include "frontier_detector_3d/frontier_pipeline.hpp"
 #include "frontier_detector_3d/frontier_visualizer.hpp"
@@ -54,6 +57,20 @@ private:
   /// \param[in] stamp Timestamp attached to the message.
   void publishOctomap(const rclcpp::Time & stamp);
 
+  /// Selects the best frontier among the clusters and publishes it as a goal
+  /// (`geometry_msgs/PoseStamped`) plus a marker.
+  ///
+  /// \param[in] frontiers Clusters detected this cycle.
+  /// \param[in] stamp Timestamp attached to the goal and marker.
+  /// \param[in] current_position Vehicle position in the map frame.
+  void publishBestFrontier(
+    const std::vector<Frontier> & frontiers, const rclcpp::Time & stamp,
+    const octomap::point3d & current_position);
+
+  /// Publishes the cylindrical pose-filter exclusion zone in RViz.
+  void publishPoseFilterMarker(
+    const rclcpp::Time & stamp, const octomap::point3d & current_position);
+
   std::shared_ptr<tf2_ros::Buffer> tf_buffer_;
   std::shared_ptr<tf2_ros::TransformListener> tf_listener_;
   rclcpp::Subscription<sensor_msgs::msg::PointCloud2>::SharedPtr cloud_sub_;
@@ -64,13 +81,22 @@ private:
   std::unique_ptr<OctomapMapper> mapper_;
   std::unique_ptr<FrontierPipeline> pipeline_;
   std::unique_ptr<FrontierVisualizer> visualizer_;
+  std::unique_ptr<BestFrontier> best_frontier_;
+
+  rclcpp::Publisher<geometry_msgs::msg::PoseStamped>::SharedPtr goal_pub_;
+  rclcpp::Publisher<visualization_msgs::msg::Marker>::SharedPtr best_marker_pub_;
+  rclcpp::Publisher<visualization_msgs::msg::Marker>::SharedPtr pose_filter_marker_pub_;
 
   std::mutex latest_mutex_;
   sensor_msgs::msg::PointCloud2::ConstSharedPtr latest_cloud_;
 
   std::string map_frame_;
+  std::string base_frame_;
   bool publish_map_;
+  bool publish_best_frontier_;
   bool use_latest_transform_;
+  double min_frontier_radius_ {0.0};
+  double max_frontier_height_ {-1.0};
   double frontier_cell_size_ {0.0};
 };
 

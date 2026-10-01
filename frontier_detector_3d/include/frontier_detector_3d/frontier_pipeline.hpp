@@ -56,12 +56,15 @@ public:
   ///            frame. Its translation becomes the ray-casting origin.
   /// \param[in] frame_id Map frame used for the output metadata.
   /// \param[in] stamp Timestamp propagated to the output metadata.
+  /// \param[in] current_position Optional vehicle position (map frame) for the
+  ///            detector's cylindrical pose filter. Pass nullptr to disable.
   /// \return Frontiers detected on the updated tree plus context metadata.
   PipelineResult process(
     const sensor_msgs::msg::PointCloud2 & cloud,
     const SensorTransform & sensor_to_map,
     const std::string & frame_id,
-    const rclcpp::Time & stamp);
+    const rclcpp::Time & stamp,
+    const octomap::point3d * current_position = nullptr);
 
   /// Converts a `geometry_msgs/TransformStamped` into the minimal
   /// `SensorTransform` used by the pure algorithm code.

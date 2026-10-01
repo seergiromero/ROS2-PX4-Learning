@@ -125,21 +125,34 @@ public:
   /// \param[in] min_frontier_size Minimum number of parent cells a cluster must
   ///            contain to be kept. `1` keeps every mode (paper behaviour);
   ///            larger values discard small isolated clusters (noise).
+  /// \param[in] min_frontier_radius Horizontal exclusion radius in metres around
+  ///            the vehicle: frontier cells closer than this (in XY) are
+  ///            ignored. A non-positive value disables it. This removes the
+  ///            blind cylinder right around the sensor.
+  /// \param[in] max_frontier_height Vertical half-thickness in metres around the
+  ///            vehicle altitude: frontier cells with a larger |z - z_vehicle|
+  ///            are ignored (everything above and below is discarded). A
+  ///            negative value disables it.
   /// \throws std::invalid_argument if `kernel_bandwidth` is not positive or
   ///         `min_frontier_size` is less than 1.
   explicit FrontierDetector(
     unsigned int exploration_depth = 16, double kernel_bandwidth = 1.0,
-    Bounds3D bounds = Bounds3D(), int min_frontier_size = 1);
+    Bounds3D bounds = Bounds3D(), int min_frontier_size = 1,
+    double min_frontier_radius = 0.0, double max_frontier_height = -1.0);
 
   /// Runs one incremental detection + clustering cycle.
   ///
   /// \param[in] tree The occupancy tree.
   /// \param[in] changed_cells Keys updated by the last map update (empty is
   ///            allowed and simply re-evaluates the stored frontier set).
+  /// \param[in] current_position Optional vehicle position (map frame) used by
+  ///            the cylindrical pose filter (`min_frontier_radius`,
+  ///            `max_frontier_height`). Pass nullptr to disable it.
   /// \return Clusters, one per mean-shift mode.
   std::vector<Frontier> detect(
     const octomap::OcTree & tree,
-    const std::vector<octomap::OcTreeKey> & changed_cells);
+    const std::vector<octomap::OcTreeKey> & changed_cells,
+    const octomap::point3d * current_position = nullptr);
 
   /// Runs a full detection + clustering cycle, rebuilding the stored frontier
   /// set from every free leaf. Intended for tests and for the first cycle when
@@ -173,6 +186,11 @@ public:
   /// \param[in] tree The occupancy tree.
   /// \return Set of parent cell keys at the detection level.
   KeySet parentKeys(const octomap::OcTree & tree) const;
+
+  /// Projects an explicit frontier-cell set onto parent nodes at
+  /// `exploration_depth`.
+  KeySet parentKeys(
+    const octomap::OcTree & tree, const KeySet & frontier_keys) const;
 
   /// Mean-shift clusters the given parent cells.
   ///
@@ -211,10 +229,18 @@ public:
   unsigned int explorationDepth() const {return exploration_depth_;}
 
 private:
+  /// Returns a pose-filtered copy of keys at `depth`. The persistent global
+  /// frontier set is never modified by this view filter.
+  KeySet filterKeysByPose(
+    const octomap::OcTree & tree, const KeySet & keys, unsigned int depth,
+    const octomap::point3d & current_position) const;
+
   unsigned int exploration_depth_;
   double kernel_bandwidth_;
   Bounds3D bounds_;
   int min_frontier_size_;
+  double min_frontier_radius_;
+  double max_frontier_height_;
   KeySet global_frontier_cells_;
 };
 

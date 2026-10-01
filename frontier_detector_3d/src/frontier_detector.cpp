@@ -70,11 +70,13 @@ bool KeyCompare::operator()(
 
 FrontierDetector::FrontierDetector(
   unsigned int exploration_depth, double kernel_bandwidth, Bounds3D bounds,
-  int min_frontier_size)
+  int min_frontier_size, double min_frontier_radius, double max_frontier_height)
 : exploration_depth_(exploration_depth),
   kernel_bandwidth_(kernel_bandwidth),
   bounds_(bounds),
-  min_frontier_size_(min_frontier_size)
+  min_frontier_size_(min_frontier_size),
+  min_frontier_radius_(min_frontier_radius),
+  max_frontier_height_(max_frontier_height)
 {
   if (kernel_bandwidth_ <= 0.0) {
     throw std::invalid_argument("kernel_bandwidth must be positive");
@@ -123,10 +125,22 @@ bool FrontierDetector::isFrontierCell(
 
 std::vector<Frontier> FrontierDetector::detect(
   const octomap::OcTree & tree,
-  const std::vector<octomap::OcTreeKey> & changed_cells)
+  const std::vector<octomap::OcTreeKey> & changed_cells,
+  const octomap::point3d * current_position)
 {
   findFrontierKeys(tree, changed_cells);
-  const KeySet parents = parentKeys(tree);
+  const KeySet frontier_keys = global_frontier_cells_;
+  KeySet parents = parentKeys(tree, frontier_keys);
+  if (current_position != nullptr) {
+    unsigned int depth = exploration_depth_;
+    if (depth > tree.getTreeDepth()) {
+      depth = tree.getTreeDepth();
+    }
+    // Filter the parent cells that will actually be published. The persistent
+    // full-resolution frontier set remains intact so cells reappear after the
+    // vehicle moves away from them.
+    parents = filterKeysByPose(tree, parents, depth, *current_position);
+  }
   return clusterParentKeys(tree, parents);
 }
 
@@ -135,6 +149,36 @@ std::vector<Frontier> FrontierDetector::detect(const octomap::OcTree & tree)
   rebuildFrontierKeys(tree);
   const KeySet parents = parentKeys(tree);
   return clusterParentKeys(tree, parents);
+}
+
+FrontierDetector::KeySet FrontierDetector::filterKeysByPose(
+  const octomap::OcTree & tree, const KeySet & keys, unsigned int depth,
+  const octomap::point3d & current_position) const
+{
+  const bool radius_enabled = min_frontier_radius_ > 0.0;
+  const bool height_enabled = max_frontier_height_ >= 0.0;
+  if (!radius_enabled && !height_enabled) {
+    return keys;
+  }
+
+  const double radius_sq = min_frontier_radius_ * min_frontier_radius_;
+  KeySet filtered;
+  for (const auto & key : keys) {
+    const octomap::point3d coord = tree.keyToCoord(key, depth);
+    const double dx = coord.x() - current_position.x();
+    const double dy = coord.y() - current_position.y();
+
+    if (radius_enabled && (dx * dx + dy * dy) < radius_sq) {
+      continue;
+    }
+    if (height_enabled &&
+      std::abs(coord.z() - current_position.z()) > max_frontier_height_)
+    {
+      continue;
+    }
+    filtered.insert(key);
+  }
+  return filtered;
 }
 
 FrontierDetector::KeySet FrontierDetector::findFrontierKeys(
@@ -188,6 +232,12 @@ FrontierDetector::KeySet FrontierDetector::rebuildFrontierKeys(
 
 FrontierDetector::KeySet FrontierDetector::parentKeys(const octomap::OcTree & tree) const
 {
+  return parentKeys(tree, global_frontier_cells_);
+}
+
+FrontierDetector::KeySet FrontierDetector::parentKeys(
+  const octomap::OcTree & tree, const KeySet & frontier_keys) const
+{
   unsigned int depth = exploration_depth_;
   const unsigned int tree_depth = tree.getTreeDepth();
   if (depth > tree_depth) {
@@ -195,7 +245,7 @@ FrontierDetector::KeySet FrontierDetector::parentKeys(const octomap::OcTree & tr
   }
 
   KeySet parents;
-  for (const auto & key : global_frontier_cells_) {
+  for (const auto & key : frontier_keys) {
     const octomap::point3d coord = tree.keyToCoord(key);
     octomap::OcTreeKey parent;
     if (tree.coordToKeyChecked(coord, depth, parent)) {

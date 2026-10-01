@@ -22,6 +22,7 @@ add_executable(frontier_detector_node
   src/frontier_pipeline.cpp
   src/mean_shift.cpp
   src/frontier_detector.cpp
+  src/best_frontier.cpp
   src/frontier_visualizer.cpp
   src/frontier_detector_node.cpp
 )
@@ -77,6 +78,21 @@ if(BUILD_TESTING)
       geometry_msgs
     )
     target_link_libraries(test_frontier_detector
+      ${OCTOMAP_LIBRARIES}
+    )
+  endif()
+
+  ament_add_gtest(test_best_frontier
+    src/best_frontier.cpp
+    test/test_best_frontier.cpp
+  )
+  if(TARGET test_best_frontier)
+    target_include_directories(test_best_frontier PRIVATE
+      $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+      ${OCTOMAP_INCLUDE_DIRS}
+      ${EIGEN3_INCLUDE_DIR}
+    )
+    target_link_libraries(test_best_frontier
       ${OCTOMAP_LIBRARIES}
     )
   endif()

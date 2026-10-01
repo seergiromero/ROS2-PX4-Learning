@@ -46,6 +46,25 @@ frontier_detector_3d:
     # FOV rim. Set to 1 to restore the exact reference behaviour.
     min_frontier_size: 2
 
+    # Cylindrical pose filter around the vehicle ----------------------------
+    # Ignore every frontier within `min_frontier_radius` metres in XY of the
+    # drone, and every frontier with |z - z_drone| > `max_frontier_height`
+    # (i.e. everything above and below the flight plane). Non-positive disables.
+    min_frontier_radius: 1.0
+    max_frontier_height: 0.6
+
+    # Best frontier (Batinovic et al., RA-L 2021) --------------------------
+    # Information-gain goal selection among the clusters:
+    #   gain = k_gain * unknown_ratio(box_length cube) * exp(-lambda * dist)
+    base_frame: base_link
+    publish_best_frontier: true
+    goal_topic: exploration/goal
+    best_frontier_topic: best_frontier_marker
+    pose_filter_marker_topic: frontier_pose_filter_marker
+    box_length: 5.0
+    k_gain: 100.0
+    lambda: 0.1386
+
     # Exploration box (map frame) -------------------------------------------
     # Frontiers outside this box are discarded, so no goals are published in
     # space the vehicle is not expected to visit.
