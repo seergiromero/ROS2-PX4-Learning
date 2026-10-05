@@ -31,11 +31,15 @@ ExplorationPlannerNode::ExplorationPlannerNode()
     declare_parameter<std::string>("path_topic", "/exploration/path");
   const std::string path_marker_topic =
     declare_parameter<std::string>("path_marker_topic", "/exploration/path_marker");
+  const std::string footprint_marker_topic = declare_parameter<std::string>(
+    "footprint_marker_topic", "/exploration/footprint_marker");
   const double planning_rate_hz = declare_parameter<double>("planning_rate_hz", 1.0);
+  publish_footprint_ = declare_parameter<bool>("publish_footprint", true);
 
   AStar3D::Config config;
   config.resolution = declare_parameter<double>("resolution", 0.3);
-  config.inflation_radius = declare_parameter<double>("inflation_radius", 0.3);
+  config.footprint_radius = declare_parameter<double>("footprint_radius", 0.5);
+  config.footprint_height = declare_parameter<double>("footprint_height", 0.4);
   config.allow_unknown = declare_parameter<bool>("allow_unknown", true);
   config.unknown_cost = declare_parameter<double>("unknown_cost", 3.0);
   config.max_nodes = static_cast<std::size_t>(declare_parameter<int>("max_nodes", 500000));
@@ -76,6 +80,8 @@ ExplorationPlannerNode::ExplorationPlannerNode()
     path_topic, rclcpp::QoS(1).transient_local());
   marker_pub_ = create_publisher<visualization_msgs::msg::Marker>(
     path_marker_topic, rclcpp::QoS(1).transient_local());
+  footprint_pub_ = create_publisher<visualization_msgs::msg::Marker>(
+    footprint_marker_topic, rclcpp::QoS(1).transient_local());
 
   const auto period = std::chrono::duration<double>(1.0 / std::max(planning_rate_hz, 0.1));
   timer_ = create_wall_timer(
@@ -85,9 +91,10 @@ ExplorationPlannerNode::ExplorationPlannerNode()
   RCLCPP_INFO(
     get_logger(),
     "Exploration planner: map '%s', goal '%s', path '%s' "
-    "(resolution=%.2f, inflation=%.2f, allow_unknown=%d)",
+    "(resolution=%.2f, footprint_radius=%.2f, footprint_height=%.2f, allow_unknown=%d)",
     octomap_topic.c_str(), goal_topic.c_str(), path_topic.c_str(),
-    config.resolution, config.inflation_radius, static_cast<int>(config.allow_unknown));
+    config.resolution, config.footprint_radius, config.footprint_height,
+    static_cast<int>(config.allow_unknown));
 }
 
 void ExplorationPlannerNode::octomapCallback(const octomap_msgs::msg::Octomap::SharedPtr msg)
@@ -178,6 +185,9 @@ void ExplorationPlannerNode::planCycle()
     planner_->plan(*tree, start, goal_point, bounds_, &status);
   const rclcpp::Time stamp = now();
   publishPath(path, stamp);
+  if (publish_footprint_) {
+    publishFootprint(stamp, *tree);
+  }
 
   if (path.empty()) {
     RCLCPP_WARN_THROTTLE(
@@ -230,6 +240,40 @@ void ExplorationPlannerNode::publishPath(
 
   path_pub_->publish(path_msg);
   marker_pub_->publish(marker);
+}
+
+void ExplorationPlannerNode::publishFootprint(
+  const rclcpp::Time & stamp, const octomap::OcTree & tree)
+{
+  visualization_msgs::msg::Marker marker;
+  marker.header.frame_id = map_frame_;
+  marker.header.stamp = stamp;
+  marker.ns = "planner_footprint";
+  marker.id = 0;
+  marker.type = visualization_msgs::msg::Marker::CUBE_LIST;
+  marker.action = visualization_msgs::msg::Marker::ADD;
+  marker.pose.orientation.w = 1.0;
+
+  const double cell = planner_->config().resolution;
+  marker.scale.x = cell;
+  marker.scale.y = cell;
+  marker.scale.z = cell;
+  marker.color.r = 0.2f;
+  marker.color.g = 0.8f;
+  marker.color.b = 1.0f;
+  marker.color.a = 0.15f;
+
+  const std::vector<octomap::point3d> cells = planner_->inflatedCells(tree, bounds_);
+  marker.points.reserve(cells.size());
+  for (const auto & point : cells) {
+    geometry_msgs::msg::Point marker_point;
+    marker_point.x = point.x();
+    marker_point.y = point.y();
+    marker_point.z = point.z();
+    marker.points.push_back(marker_point);
+  }
+
+  footprint_pub_->publish(marker);
 }
 
 }  // namespace exploration_planner_3d

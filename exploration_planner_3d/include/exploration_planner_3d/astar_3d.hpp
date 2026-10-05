@@ -51,7 +51,7 @@ const char * toString(PlanStatus status);
 ///
 /// The planner rasterises the octree into a private occupancy grid at
 /// `resolution`, classifies each cell as free / unknown / occupied, optionally
-/// inflates occupied cells by `inflation_radius`, and runs a 26-connected A*
+/// inflates occupied cells by its cylindrical footprint, and runs a 26-connected A*
 /// from the start to the goal. It is stateless: every `plan()` call rebuilds
 /// the grid from the tree it is given.
 class AStar3D
@@ -61,9 +61,11 @@ public:
   {
     /// Grid cell size in metres.
     double resolution = 0.3;
-    /// Occupied cells are dilated by this radius (metres) before planning.
-    /// 0 disables inflation.
-    double inflation_radius = 0.0;
+    /// Horizontal inflation radius (metres) applied around occupied cells: the
+    /// drone body radius plus a safety margin. 0 disables it.
+    double footprint_radius = 0.5;
+    /// Vertical half-extent (metres) of the inflated volume. 0 disables it.
+    double footprint_height = 0.4;
     /// When true, unknown cells are traversable; when false they are blocked.
     bool allow_unknown = true;
     /// Cost multiplier applied when a path enters an unknown cell. Values > 1
@@ -98,6 +100,16 @@ public:
     const octomap::OcTree & tree, const octomap::point3d & start,
     const octomap::point3d & goal, const Bounds3D & bounds = Bounds3D(),
     PlanStatus * status = nullptr) const;
+
+  /// Returns the world-frame centres of the cells that are blocked only because
+  /// of the footprint inflation (the clearance envelope around obstacles).
+  /// Useful to visualise the footprint the planner actually respects.
+  ///
+  /// \param[in] tree Occupancy tree.
+  /// \param[in] bounds Optional search box (must match the one used to plan).
+  /// \return Inflated cell centres in the map frame.
+  std::vector<octomap::point3d> inflatedCells(
+    const octomap::OcTree & tree, const Bounds3D & bounds = Bounds3D()) const;
 
   const Config & config() const {return config_;}
 

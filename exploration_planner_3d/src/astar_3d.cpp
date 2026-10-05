@@ -20,6 +20,7 @@ namespace
 constexpr uint8_t kFree = 0;
 constexpr uint8_t kUnknown = 1;
 constexpr uint8_t kOccupied = 2;
+constexpr uint8_t kInflated = 3;
 
 /// Rasterised occupancy grid used internally by the planner.
 struct Grid
@@ -145,8 +146,19 @@ Grid buildGrid(
     }
   }
 
-  if (config.inflation_radius > 0.0) {
-    const int radius = static_cast<int>(std::ceil(config.inflation_radius / res));
+  // Cylindrical footprint: inflate every occupied cell by `footprint_radius` in
+  // XY and `footprint_height` in Z (plus half a map cell so the discretisation
+  // itself is covered). This keeps the route at least one body radius away from
+  // obstacles horizontally while still allowing flight above/below them.
+  const double radius = config.footprint_radius;
+  const double height = config.footprint_height;
+  if (radius > 0.0 || height > 0.0) {
+    const double effective_radius = radius + 0.5 * res;
+    const double effective_height = height + 0.5 * res;
+    const int radius_cells =
+      static_cast<int>(std::ceil(effective_radius / res));
+    const int height_cells =
+      static_cast<int>(std::ceil(effective_height / res));
     std::vector<uint8_t> inflated = grid.state;
     for (int x = 0; x < grid.nx; ++x) {
       for (int y = 0; y < grid.ny; ++y) {
@@ -154,10 +166,15 @@ Grid buildGrid(
           if (grid.state[grid.index(x, y, z)] != kOccupied) {
             continue;
           }
-          for (int dx = -radius; dx <= radius; ++dx) {
-            for (int dy = -radius; dy <= radius; ++dy) {
-              for (int dz = -radius; dz <= radius; ++dz) {
-                if (dx * dx + dy * dy + dz * dz > radius * radius) {
+          for (int dx = -radius_cells; dx <= radius_cells; ++dx) {
+            for (int dy = -radius_cells; dy <= radius_cells; ++dy) {
+              const double horizontal =
+                std::sqrt(static_cast<double>(dx * dx + dy * dy)) * res;
+              if (horizontal > effective_radius) {
+                continue;
+              }
+              for (int dz = -height_cells; dz <= height_cells; ++dz) {
+                if (std::abs(dz) * res > effective_height) {
                   continue;
                 }
                 const int cx = x + dx;
@@ -167,10 +184,12 @@ Grid buildGrid(
                   continue;
                 }
                 // Inflate both free and unknown cells so the route keeps
-                // clearance even through unmapped space.
+                // clearance even through unmapped space. They are tagged
+                // kInflated so they can be told apart from real obstacles when
+                // visualising the footprint.
                 uint8_t & cell = inflated[grid.index(cx, cy, cz)];
                 if (cell == kFree || cell == kUnknown) {
-                  cell = kOccupied;
+                  cell = kInflated;
                 }
               }
             }
@@ -475,6 +494,23 @@ std::vector<octomap::point3d> AStar3D::plan(
   }
   set_status(goal_projected ? PlanStatus::kGoalProjected : PlanStatus::kSuccess);
   return path;
+}
+
+std::vector<octomap::point3d> AStar3D::inflatedCells(
+  const octomap::OcTree & tree, const Bounds3D & bounds) const
+{
+  const Grid grid = buildGrid(tree, config_, bounds);
+  std::vector<octomap::point3d> cells;
+  for (int x = 0; x < grid.nx; ++x) {
+    for (int y = 0; y < grid.ny; ++y) {
+      for (int z = 0; z < grid.nz; ++z) {
+        if (grid.state[grid.index(x, y, z)] == kInflated) {
+          cells.push_back(grid.center(x, y, z));
+        }
+      }
+    }
+  }
+  return cells;
 }
 
 const char * toString(PlanStatus status)

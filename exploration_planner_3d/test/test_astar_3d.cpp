@@ -43,7 +43,8 @@ TEST(AStar3D, PlansThroughUnknownWhenAllowed)
   AStar3D::Config config;
   config.resolution = 0.25;
   config.allow_unknown = true;
-  config.inflation_radius = 0.0;
+  config.footprint_radius = 0.0;
+  config.footprint_height = 0.0;
   AStar3D planner(config);
 
   const octomap::point3d start(0.0, 1.0, 1.0);
@@ -66,7 +67,8 @@ TEST(AStar3D, FailsWhenUnknownBlocked)
   AStar3D::Config config;
   config.resolution = 0.25;
   config.allow_unknown = false;
-  config.inflation_radius = 0.0;
+  config.footprint_radius = 0.0;
+  config.footprint_height = 0.0;
   AStar3D planner(config);
 
   PlanStatus status = PlanStatus::kSuccess;
@@ -91,7 +93,8 @@ TEST(AStar3D, GoalInUnknownIsReachableWhenAllowed)
   config.resolution = 0.25;
   config.allow_unknown = true;
   config.unknown_cost = 3.0;
-  config.inflation_radius = 0.0;
+  config.footprint_radius = 0.0;
+  config.footprint_height = 0.0;
   AStar3D planner(config);
 
   PlanStatus status = PlanStatus::kNoPath;
@@ -117,7 +120,8 @@ TEST(AStar3D, RoutesAroundObstacleAndStaysOffOccupiedCells)
   AStar3D::Config config;
   config.resolution = 0.25;
   config.allow_unknown = true;
-  config.inflation_radius = 0.0;
+  config.footprint_radius = 0.0;
+  config.footprint_height = 0.0;
   config.simplify = false;
   AStar3D planner(config);
 
@@ -137,4 +141,83 @@ TEST(AStar3D, RoutesAroundObstacleAndStaysOffOccupiedCells)
   }
   // It must detour through the gap (y > 2).
   EXPECT_GT(max_y, 2.0);
+}
+
+TEST(AStar3D, FootprintBlocksNarrowGap)
+{
+  octomap::OcTree tree(0.25);
+  // Wall at x = 0 spanning the whole search box in z, with a 1 m gap in y
+  // between 0.75 and 1.75.
+  Bounds3D bounds;
+  bounds.enabled = true;
+  bounds.min_x = -3.0;
+  bounds.max_x = 3.0;
+  bounds.min_y = -1.0;
+  bounds.max_y = 3.0;
+  bounds.min_z = -1.0;
+  bounds.max_z = 3.0;
+
+  for (double x = -0.5; x <= 0.5 + 1e-9; x += 0.25) {
+    for (double y = -1.0; y <= 0.75 + 1e-9; y += 0.25) {
+      for (double z = -1.0; z <= 3.0 + 1e-9; z += 0.25) {
+        tree.updateNode(octomap::point3d(x, y, z), true, true);
+      }
+    }
+    for (double y = 1.75; y <= 3.0 + 1e-9; y += 0.25) {
+      for (double z = -1.0; z <= 3.0 + 1e-9; z += 0.25) {
+        tree.updateNode(octomap::point3d(x, y, z), true, true);
+      }
+    }
+  }
+
+  const octomap::point3d start(-2.0, 1.25, 1.25);
+  const octomap::point3d goal(2.0, 1.25, 1.25);
+
+  // Without a footprint the 1 m gap is passable.
+  AStar3D::Config thin;
+  thin.resolution = 0.25;
+  thin.allow_unknown = true;
+  thin.footprint_radius = 0.0;
+  thin.footprint_height = 0.0;
+  AStar3D thin_planner(thin);
+  EXPECT_FALSE(thin_planner.plan(tree, start, goal, bounds).empty());
+
+  // A 0.6 m body needs a wider clearance than the gap offers, so the route is
+  // rejected instead of squeezing through it.
+  AStar3D::Config thick;
+  thick.resolution = 0.25;
+  thick.allow_unknown = true;
+  thick.footprint_radius = 0.6;
+  thick.footprint_height = 0.4;
+  AStar3D thick_planner(thick);
+  EXPECT_TRUE(thick_planner.plan(tree, start, goal, bounds).empty());
+}
+
+TEST(AStar3D, InflatedCellsExposeFootprintEnvelope)
+{
+  octomap::OcTree tree(0.25);
+  tree.updateNode(octomap::point3d(0.0, 0.0, 0.0), true, true);
+
+  Bounds3D bounds;
+  bounds.enabled = true;
+  bounds.min_x = -1.0;
+  bounds.max_x = 1.0;
+  bounds.min_y = -1.0;
+  bounds.max_y = 1.0;
+  bounds.min_z = -1.0;
+  bounds.max_z = 1.0;
+
+  AStar3D::Config thin;
+  thin.resolution = 0.25;
+  thin.footprint_radius = 0.0;
+  thin.footprint_height = 0.0;
+  AStar3D thin_planner(thin);
+  EXPECT_TRUE(thin_planner.inflatedCells(tree, bounds).empty());
+
+  AStar3D::Config thick;
+  thick.resolution = 0.25;
+  thick.footprint_radius = 0.5;
+  thick.footprint_height = 0.3;
+  AStar3D thick_planner(thick);
+  EXPECT_FALSE(thick_planner.inflatedCells(tree, bounds).empty());
 }

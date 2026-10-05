@@ -11,13 +11,20 @@ exploration_planner_node:
     goal_topic: /exploration/goal
     path_topic: /exploration/path
     path_marker_topic: /exploration/path_marker
+    footprint_marker_topic: /exploration/footprint_marker
     planning_rate_hz: 1.0
+    # Publish the footprint-inflated clearance envelope as a marker for RViz.
+    publish_footprint: true
 
     # A* --------------------------------------------------------------------
     # Grid cell size in metres (may differ from the octomap resolution).
     resolution: 0.3
-    # Dilate occupied cells by this radius so the route keeps clearance.
-    inflation_radius: 0.3
+    # Drone footprint used to inflate occupied cells: horizontal body radius
+    # plus safety/tracking margin, and the vertical half-extent. This keeps the
+    # route at least this far from obstacles, so it should cover the real body
+    # (an X500 diagonal is ~0.5 m) plus some clearance.
+    footprint_radius: 0.7
+    footprint_height: 0.7
     # True lets the route cross unmapped space (needed to reach frontiers at the
     # free/unknown boundary). False blocks unknown space entirely.
     allow_unknown: true
@@ -32,7 +39,7 @@ exploration_planner_node:
     # Search box (map frame) ------------------------------------------------
     # When enabled the search is restricted to this box; when disabled it uses
     # the octomap's own extent.
-    bounds_enabled: true
+    bounds_enabled: false
     min_x: -6.0
     max_x: 8.0
     min_y: -4.0

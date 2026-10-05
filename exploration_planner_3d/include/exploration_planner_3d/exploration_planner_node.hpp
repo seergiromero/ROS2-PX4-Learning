@@ -46,6 +46,9 @@ private:
   /// Publishes the route as a `nav_msgs/Path` and a line-strip marker.
   void publishPath(const std::vector<octomap::point3d> & path, const rclcpp::Time & stamp);
 
+  /// Publishes the footprint-inflated clearance envelope as a marker.
+  void publishFootprint(const rclcpp::Time & stamp, const octomap::OcTree & tree);
+
   std::string map_frame_;
   std::string base_frame_;
 
@@ -59,7 +62,9 @@ private:
   rclcpp::Subscription<geometry_msgs::msg::PoseStamped>::SharedPtr goal_sub_;
   rclcpp::Publisher<nav_msgs::msg::Path>::SharedPtr path_pub_;
   rclcpp::Publisher<visualization_msgs::msg::Marker>::SharedPtr marker_pub_;
+  rclcpp::Publisher<visualization_msgs::msg::Marker>::SharedPtr footprint_pub_;
   rclcpp::TimerBase::SharedPtr timer_;
+  bool publish_footprint_ {true};
 
   std::mutex mutex_;
   std::shared_ptr<octomap::OcTree> tree_;
