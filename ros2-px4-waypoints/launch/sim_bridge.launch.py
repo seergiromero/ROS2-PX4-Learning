@@ -109,6 +109,9 @@ def generate_launch_description() -> LaunchDescription:
                 'map_frame': 'map',
                 'use_latest_transform': False,
                 'publish_map': True,
+                # Save the final OctoMap here on shutdown (Ctrl+C). Relative to
+                # the directory ros2 launch was started from.
+                'map_save_path': 'octomap.bt',
                 'process_rate_hz': 0.5,
                 'resolution': 0.3,
                 'point_subsample': 3,
@@ -120,7 +123,7 @@ def generate_launch_description() -> LaunchDescription:
                 # frontier (must be >= the parent cell size).
                 'clustering.kernel_bandwidth': 1.0,
                 # Drop single-cell clusters (LiDAR FOV rim noise).
-                'min_frontier_size': 6,
+                'min_frontier_size': 10,
                 # Cylindrical pose filter around the drone: ignore every
                 # frontier within 1 m in XY, and everything above/below it
                 # (|z - z_drone| > 0.6 m).
@@ -128,7 +131,7 @@ def generate_launch_description() -> LaunchDescription:
                 'max_frontier_height': 4.0,
                 # Best frontier: information-gain goal selection.
                 'publish_best_frontier': True,
-                'box_length': 5.0,
+                'box_length': 0.25,
                 'k_gain': 100.0,
                 'lambda': 0.1386,
                 'pose_filter_marker_topic': 'frontier_pose_filter_marker',
@@ -210,7 +213,7 @@ def generate_launch_description() -> LaunchDescription:
                 'odom_frame': 'odom',
                 'path_topic': '/exploration/path',
                 'octomap_topic': '/octomap_binary',
-                'lookahead_distance_m': 0.8,
+                'lookahead_distance_m': 1.5,
                 'goal_tolerance_m': 0.5,
                 'collision_check': True,
                 'check_resolution_m': 0.2,
