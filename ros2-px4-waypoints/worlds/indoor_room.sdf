@@ -118,6 +118,25 @@
       <pose>3.5 -4 1.75 0 0 0</pose>
     </model>
 
+    <model name="front_door">
+      <static>true</static>
+      <link name="link">
+        <collision name="collision">
+          <geometry><box><size>2.0 0.2 3.5</size></box></geometry>
+        </collision>
+        <visual name="door_panel">
+          <geometry><box><size>2.0 0.2 3.5</size></box></geometry>
+          <material><ambient>0.42 0.26 0.14 1</ambient><diffuse>0.55 0.34 0.18 1</diffuse></material>
+        </visual>
+        <visual name="door_handle">
+          <pose>0.7 0.14 -0.75 0 0 0</pose>
+          <geometry><box><size>0.08 0.06 0.18</size></box></geometry>
+          <material><ambient>0.70 0.70 0.72 1</ambient><diffuse>0.85 0.85 0.88 1</diffuse></material>
+        </visual>
+      </link>
+      <pose>0 -4 1.75 0 0 0</pose>
+    </model>
+
     <model name="box_obstacle_a">
       <static>true</static>
       <link name="link">
