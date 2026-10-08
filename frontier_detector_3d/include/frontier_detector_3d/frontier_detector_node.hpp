@@ -43,6 +43,12 @@ class FrontierDetectorNode : public rclcpp::Node
 public:
   FrontierDetectorNode();
 
+  /// Saves the final OctoMap to `map_save_path` on shutdown (Ctrl+C).
+  ///
+  /// The format follows the file extension: `.bt` writes the binary tree,
+  /// `.ot` writes the full occupancy tree. An empty path disables the save.
+  ~FrontierDetectorNode() override;
+
 private:
   /// Callback of the cloud subscription: stores the latest cloud for the timer.
   ///
@@ -92,6 +98,7 @@ private:
 
   std::string map_frame_;
   std::string base_frame_;
+  std::string map_save_path_;
   bool publish_map_;
   bool publish_best_frontier_;
   bool use_latest_transform_;

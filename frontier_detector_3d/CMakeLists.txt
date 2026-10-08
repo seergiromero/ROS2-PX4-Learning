@@ -33,6 +33,8 @@ target_include_directories(frontier_detector_node PRIVATE
   ${EIGEN3_INCLUDE_DIR}
 )
 
+target_compile_features(frontier_detector_node PRIVATE cxx_std_17)
+
 ament_target_dependencies(frontier_detector_node
   geometry_msgs
   octomap_msgs

@@ -23,6 +23,10 @@ frontier_detector_3d:
     use_latest_transform: false
     publish_map: true
     process_rate_hz: 0.5
+    # Write the final OctoMap here on shutdown (Ctrl+C). ".bt" = binary,
+    # ".ot" = full occupancy tree. Empty disables the save. Relative paths are
+    # resolved from the directory the node is launched in.
+    map_save_path: "octomap.bt"
 
     # OctoMap model ---------------------------------------------------------
     resolution: 0.3

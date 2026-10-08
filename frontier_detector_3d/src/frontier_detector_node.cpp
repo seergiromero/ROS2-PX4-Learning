@@ -5,6 +5,8 @@
 #include <algorithm>
 #include <chrono>
 #include <cmath>
+#include <exception>
+#include <filesystem>
 #include <stdexcept>
 #include <utility>
 #include <vector>
@@ -24,6 +26,10 @@ FrontierDetectorNode::FrontierDetectorNode()
     "frontier_topic", "/exploration/frontiers");
   const double process_rate_hz = declare_parameter<double>("process_rate_hz", 2.0);
   use_latest_transform_ = declare_parameter<bool>("use_latest_transform", false);
+
+  // File the final OctoMap is written to on shutdown (Ctrl+C). Empty disables
+  // the save. The extension selects the format: `.bt` binary, `.ot` full.
+  map_save_path_ = declare_parameter<std::string>("map_save_path", "");
 
   // --- OctoMap model (standard OctoMap parameters) -----------------------
   const double resolution = declare_parameter<double>("resolution", 0.5);
@@ -150,6 +156,38 @@ FrontierDetectorNode::FrontierDetectorNode()
     resolution, point_subsample, detection_depth, kernel_bandwidth, min_frontier_size,
     min_frontier_radius_, max_frontier_height_, box_length, k_gain, lambda,
     static_cast<int>(bounds.enabled), publish_map_ ? "true" : "false");
+
+  if (!map_save_path_.empty()) {
+    RCLCPP_INFO(
+      get_logger(), "OctoMap will be saved to %s on shutdown", map_save_path_.c_str());
+  }
+}
+
+FrontierDetectorNode::~FrontierDetectorNode()
+{
+  if (map_save_path_.empty() || !mapper_) {
+    return;
+  }
+  try {
+    const std::filesystem::path path(map_save_path_);
+    if (path.has_parent_path()) {
+      std::filesystem::create_directories(path.parent_path());
+    }
+    const std::string extension = path.extension().string();
+    const bool ok = (extension == ".ot") ?
+      mapper_->mutableTree().write(map_save_path_) :
+      mapper_->mutableTree().writeBinary(map_save_path_);
+    if (ok) {
+      RCLCPP_INFO(
+        get_logger(), "Saved OctoMap (%zu nodes) to %s",
+        mapper_->nodeCount(), map_save_path_.c_str());
+    } else {
+      RCLCPP_ERROR(
+        get_logger(), "Failed to save OctoMap to %s", map_save_path_.c_str());
+    }
+  } catch (const std::exception & e) {
+    RCLCPP_ERROR(get_logger(), "Error saving OctoMap: %s", e.what());
+  }
 }
 
 void FrontierDetectorNode::cloudCallback(
