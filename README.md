@@ -1,169 +1,192 @@
-# ROS2-PX4-Learning
+# PX4 3D Autonomous Exploration
 
-ROS 2 and PX4 offboard-control learning workspace using Gazebo Sim and a
-custom `x500_test` model.
+ROS 2 project for experimenting with autonomous 3D exploration of an aerial
+robot in a simulated indoor environment. The system combines LiDAR-inertial
+odometry, 3D occupancy mapping, frontier-based exploration and PX4 offboard
+control.
 
-The world at
-`ros2-px4-waypoints/worlds/indoor_room.sdf` is a small indoor test room. It
-contains walls, two boxes and a column, and does not depend on external world
-assets.
+This repository is presented as a technical demonstration of the implemented
+pipeline. It is an evolving research and learning project, not a packaged
+framework or a plug-and-play installation guide.
 
-The custom model is located at
-`~/PX4-Autopilot/Tools/simulation/gz/models/x500_test`. It includes:
+## Demonstrations
 
-- A 3D lidar with 360 horizontal samples and 16 vertical beams.
+The final demonstrations will show two complementary results:
+
+### Frontier-based exploration in RViz
+
+The drone explores an indoor room while RViz displays:
+
+- The vehicle model and sensor frames.
+- The LiDAR data and the incrementally built OctoMap.
+- Detected 3D frontiers.
+- The selected information-gain goal.
+- The A* route generated toward the next unexplored region.
+- The inflated collision-checking footprint used by the planner.
+
+> Frontier exploration video: to be added.
+
+### 3D reconstruction with FAST-LIO
+
+The LiDAR and IMU data are fused by FAST-LIO to estimate motion and build an
+incremental point-cloud reconstruction of the environment. The resulting PCD
+map can be inspected independently from the occupancy map used for planning.
+
+> FAST-LIO reconstruction video or screenshot: to be added.
+
+The two outputs are intentionally shown separately:
+
+- **OctoMap**: an occupancy representation used for frontier detection and
+  collision-aware planning. It is saved as `octomap.bt` when the mapping node
+  shuts down.
+- **FAST-LIO map**: an accumulated 3D point cloud used for reconstruction and
+  visualization. It is saved as `scans.pcd` when the mapping process shuts
+  down.
+
+## What The System Does
+
+The pipeline is designed around a simulated PX4 X500-style quadrotor equipped
+with a 3D LiDAR and an RGB/depth camera. Starting from an initially unknown
+indoor environment, it:
+
+1. Receives LiDAR point clouds and IMU measurements.
+2. Estimates the vehicle motion with FAST-LIO.
+3. Integrates LiDAR observations into an in-memory OctoMap.
+4. Detects free-space cells adjacent to unknown space as exploration frontiers.
+5. Groups frontier cells and selects the next goal using an information-gain
+   criterion.
+6. Plans a collision-aware 3D route with A*.
+7. Converts the route into PX4-compatible offboard setpoints.
+8. Repeats the process as new parts of the environment become observable.
+
+## Architecture
+
+```text
+Gazebo Sim
+  |  LiDAR + IMU + PX4 odometry
+  v
+FAST-LIO ----------------------> 3D point-cloud reconstruction (.pcd)
+  |
+  | estimated map -> body motion
+  v
+frontier_detector_3d ----------> OctoMap (.bt)
+  |                         \
+  | frontiers and goal        \ occupancy map
+  v                            v
+exploration_planner_3d ------> 3D A* path
+  |
+  v
+exploration_path_follower ----> PX4 Offboard / TrajectorySetpoint
+```
+
+### `frontier_detector_3d`
+
+This node owns the in-memory OctoMap built from `/lidar_3d/points`. Frontier
+cells are identified using a 26-neighbourhood test: a free cell is considered
+a frontier when it borders unknown space without an occupied neighbour.
+
+The implementation follows the multi-resolution frontier exploration approach
+described by Batinovic et al. It projects frontier cells to a coarser Octree
+level, clusters them with a Gaussian mean-shift implementation and selects a
+goal according to local information gain and distance.
+
+It publishes the occupancy map, frontier markers, the selected exploration
+goal and visualization markers for RViz.
+
+### `exploration_planner_3d`
+
+This node runs a global 3D A* search over the OctoMap. It accounts for the
+vehicle footprint, allows controlled traversal of unknown cells when needed to
+reach a frontier and publishes both a `nav_msgs/Path` and RViz markers.
+
+Goals that are outside the usable map or occupied are projected toward a valid
+known-free cell when possible.
+
+### `ros2-px4-waypoints`
+
+This package connects perception and planning to PX4. It provides:
+
+- Gazebo-to-ROS 2 sensor bridging.
+- PX4 odometry conversion from NED to ROS ENU.
+- The `map -> odom -> base_link` TF structure.
+- PX4 offboard, arming and takeoff logic.
+- Path following with map-to-NED coordinate conversion.
+- RViz configuration for the indoor exploration scene.
+
+Only one node should own PX4 trajectory setpoints during a mission. The
+waypoint, takeoff and exploration path-follower nodes are alternative control
+experiments, not nodes intended to run concurrently.
+
+## Technology
+
+- ROS 2 Jazzy
+- PX4 SITL and PX4 offboard control
+- Gazebo Sim
+- FAST-LIO 2 for LiDAR-inertial odometry
+- OctoMap for 3D occupancy mapping
+- 3D frontier detection and mean-shift clustering
+- Global 3D A* planning
+- RViz2 visualization
+- Micro XRCE-DDS Agent for PX4/ROS 2 communication
+- C++ and `ament_cmake`
+
+## Environment
+
+The demonstration scene is a self-contained indoor room with walls, boxes and
+a column. It uses a custom `x500_test` simulation model containing:
+
+- A 360-degree 3D LiDAR with 16 vertical beams.
 - An Oak-D-Lite RGB/depth camera.
 
-## Requirements
+The current simulated sensor topics include:
 
-- PX4-Autopilot built with the custom `22000_gz_x500_test` airframe.
-- ROS 2 Jazzy.
-- Gazebo Sim.
-- `MicroXRCEAgent` built and available after sourcing the workspace.
+| Topic | Purpose |
+| --- | --- |
+| `/lidar_3d/points` | 3D LiDAR point cloud |
+| `/imu/data` | IMU measurements for FAST-LIO |
+| `/depth_camera/image` | Depth image |
+| `/depth_camera/points` | Depth point cloud |
+| `/odom` | PX4 odometry converted to ROS conventions |
 
-Build the ROS 2 workspace before the first run:
+## Outputs
 
-```bash
-cd ~/px4_ros2_rust_offboard_ws
-source /opt/ros/jazzy/setup.zsh
-colcon build --symlink-install
-source install/setup.zsh
-```
+The project produces two different 3D representations:
 
-## Launch Procedure
-
-Use one terminal for each step. Start the terminals in the order shown below.
-
-### 1. Start Gazebo
-
-In terminal 1:
-
-```bash
-cd ~/px4_ros2_rust_offboard_ws
-source /opt/ros/jazzy/setup.zsh
-export GZ_SIM_RESOURCE_PATH="$PWD/src/ROS2-PX4-Learning/ros2-px4-waypoints/worlds:${GZ_SIM_RESOURCE_PATH:-}"
-source ~/PX4-Autopilot/build/px4_sitl_default/rootfs/gz_env.sh
-  "$PWD/src/ROS2-PX4-Learning/ros2-px4-waypoints/worlds/indoor_room.sdf"
-```
-
-Keep this terminal running.
-
-### 2. Start Micro XRCE-DDS Agent
-
-In terminal 2:
-
-```bash
-cd ~/px4_ros2_rust_offboard_ws
-source /opt/ros/jazzy/setup.zsh
-source install/setup.zsh
-MicroXRCEAgent udp4 -p 8888
-```
-
-This agent transports PX4 topics such as `/fmu/in/*` and `/fmu/out/*` to and
-from ROS 2. Keep this terminal running before starting PX4.
-
-### 3. Start PX4 SITL
-
-In terminal 3:
-
-```bash
-cd ~/PX4-Autopilot
-PX4_GZ_STANDALONE=1 \
-PX4_GZ_WORLD=indoor_room \
-PX4_SYS_AUTOSTART=22000 \
-PX4_SIM_MODEL=x500_test \
-PX4_GZ_MODEL_POSE=0,-2,1.5 \
-make px4_sitl gz_x500_test
-```
-
-PX4 connects to the agent on UDP port `8888` and spawns `x500_test_0` in the
-running Gazebo world. Keep this terminal running.
-
-### 4. Start the ROS 2 launch
-
-In terminal 4:
-
-```bash
-cd ~/px4_ros2_rust_offboard_ws
-source /opt/ros/jazzy/setup.zsh
-source install/setup.zsh
-ros2 launch ros2-px4-waypoints sim_bridge.launch.py
-```
-
-This launch starts:
-
-- The Gazebo-to-ROS 2 sensor bridge.
-- The dynamic `odom -> base_link` transform from PX4 vehicle odometry.
-- Static TF from `base_link` to `lidar3d_link`.
-- Static TF from `base_link` to `camera_link`.
-- RViz with the 3D lidar and depth-image displays.
-
-The launch does not start Gazebo, PX4 or `MicroXRCEAgent`.
-
-## Automatic Takeoff
-
-To make the vehicle enter Offboard mode, arm and climb to a specified height:
-
-```bash
-ros2 launch ros2-px4-waypoints sim_bridge.launch.py \
-  with_takeoff:=true \
-  takeoff_height_m:=2.0
-```
-
-The takeoff node captures the current local XY position, climbs vertically to
-the requested height and holds that position. PX4 uses NED coordinates, so a
-positive height such as `2.0` is internally sent as `z = -2.0`.
-
-Do not run `with_takeoff:=true` and `with_offboard:=true` at the same time. Both
-nodes would publish competing Offboard setpoints.
-
-## Waypoint Mission
-
-To run the existing waypoint node instead of the takeoff node:
-
-```bash
-ros2 launch ros2-px4-waypoints sim_bridge.launch.py \
-  with_offboard:=true
-```
-
-The waypoint node takes off and then follows the waypoints defined in
-`src/offboard_waypoints_node.cpp`.
-
-## ROS 2 Sensor Topics
-
-The launch configures these Gazebo-to-ROS 2 mappings in
-`config/bridge.yaml`:
-
-| ROS 2 topic | Message type | Sensor |
+| Output | Representation | Main use |
 | --- | --- | --- |
-| `/lidar_3d/scan` | `sensor_msgs/msg/LaserScan` | 3D lidar scan |
-| `/lidar_3d/points` | `sensor_msgs/msg/PointCloud2` | 3D lidar point cloud |
-| `/depth_camera/image` | `sensor_msgs/msg/Image` | Depth image |
-| `/depth_camera/points` | `sensor_msgs/msg/PointCloud2` | Depth point cloud |
-| `/imu/data` | `sensor_msgs/msg/Imu` | IMU (accelerometer + gyroscope) |
+| `octomap.bt` | Binary occupancy tree | Frontier detection and planning |
+| `scans.pcd` | Accumulated LiDAR point cloud | 3D reconstruction and visualization |
 
-Check the topics after launching:
+The OctoMap is saved by `frontier_detector_3d` on shutdown. FAST-LIO saves its
+accumulated point cloud on shutdown when PCD saving is enabled. The output
+locations are currently tied to the source/workspace configuration and may be
+refined as the project evolves.
 
-```bash
-ros2 topic list | grep -E "lidar|depth|fmu"
-```
+## Project Status
 
-Check the TF tree:
+Implemented:
 
-```bash
-ros2 run tf2_ros tf2_echo base_link lidar3d_link
-ros2 run tf2_ros tf2_echo base_link camera_link
-```
+- PX4 SITL indoor simulation.
+- Gazebo sensor bridge and custom vehicle model.
+- PX4 odometry to ROS frame conversion.
+- FAST-LIO integration with the simulated LiDAR and IMU.
+- Incremental OctoMap construction.
+- 3D frontier detection and goal selection.
+- Global 3D A* planning.
+- PX4 offboard path following.
+- Automatic saving of the OctoMap and FAST-LIO point cloud.
 
-RViz uses `base_link` as its fixed frame.
+In progress:
 
-The current odometry node publishes `/odom` and the `odom -> base_link` TF.
-This is PX4 state odometry, not SLAM yet; a future lidar-SLAM node will use it
-alongside `/lidar_3d/points` to build and save a 3D map.
+- Recording and publishing the final frontier-exploration demonstration.
+- Recording the FAST-LIO reconstruction demonstration.
+- Improving mission completion, landing and shutdown behavior.
+- Further validation of planning and frame conversions in more environments.
 
-## Stopping
+## Disclaimer
 
-Stop the ROS 2 launch with `Ctrl+C`, then stop PX4, the Micro XRCE-DDS Agent
-and Gazebo in their respective terminals. If a previous simulation remains
-running, stop it before starting another one to avoid duplicate Gazebo models
-or DDS connections.
+This repository documents an experimental autonomous-drone exploration
+pipeline developed for simulation, learning and research. It has not been
+presented as a production-ready autonomy stack and should not be deployed on
+real hardware without independent validation of estimation, transforms,
+planning, command arbitration and failsafe behavior.
