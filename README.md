@@ -11,7 +11,7 @@ framework or a plug-and-play installation guide.
 
 ## Demonstrations
 
-The final demonstrations will show two complementary results:
+The demonstrations show two complementary results:
 
 ### Frontier-based exploration in RViz
 
@@ -24,7 +24,7 @@ The drone explores an indoor room while RViz displays:
 - The A* route generated toward the next unexplored region.
 - The inflated collision-checking footprint used by the planner.
 
-> Frontier exploration video: to be added.
+<video src="https://github.com/user-attachments/assets/9803f5b1-0f50-46b3-8f2b-d95ea2170c4b" controls width="100%"></video>
 
 ### 3D reconstruction with FAST-LIO
 
@@ -32,7 +32,7 @@ The LiDAR and IMU data are fused by FAST-LIO to estimate motion and build an
 incremental point-cloud reconstruction of the environment. The resulting PCD
 map can be inspected independently from the occupancy map used for planning.
 
-> FAST-LIO reconstruction video or screenshot: to be added.
+<video src="https://github.com/user-attachments/assets/c518033d-d705-4770-89ff-da53e30a3b0d" controls width="100%"></video>
 
 The two outputs are intentionally shown separately:
 
@@ -178,8 +178,7 @@ Implemented:
 
 In progress:
 
-- Recording and publishing the final frontier-exploration demonstration.
-- Recording the FAST-LIO reconstruction demonstration.
+- Publishing further mission demonstrations and results.
 - Improving mission completion, landing and shutdown behavior.
 - Further validation of planning and frame conversions in more environments.
 
