@@ -102,7 +102,7 @@ reach a frontier and publishes both a `nav_msgs/Path` and RViz markers.
 Goals that are outside the usable map or occupied are projected toward a valid
 known-free cell when possible.
 
-### `ros2-px4-waypoints`
+### `px4_indoor_exploration`
 
 This package connects perception and planning to PX4. It provides:
 
