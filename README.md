@@ -24,7 +24,10 @@ The drone explores an indoor room while RViz displays:
 - The A* route generated toward the next unexplored region.
 - The inflated collision-checking footprint used by the planner.
 
-<video src="https://github.com/user-attachments/assets/9803f5b1-0f50-46b3-8f2b-d95ea2170c4b" controls width="100%"></video>
+<video controls width="100%">
+  <source src="https://raw.githubusercontent.com/seergiromero/ROS2-PX4-Learning/main/px4_indoor_exploration/docs/3D_Frontier_Exploration.mp4" type="video/mp4">
+  <a href="https://github.com/seergiromero/ROS2-PX4-Learning/raw/refs/heads/main/px4_indoor_exploration/docs/3D_Frontier_Exploration.mp4">Download the frontier exploration video</a>
+</video>
 
 ### 3D reconstruction with FAST-LIO
 
@@ -32,7 +35,10 @@ The LiDAR and IMU data are fused by FAST-LIO to estimate motion and build an
 incremental point-cloud reconstruction of the environment. The resulting PCD
 map can be inspected independently from the occupancy map used for planning.
 
-<video src="https://github.com/user-attachments/assets/c518033d-d705-4770-89ff-da53e30a3b0d" controls width="100%"></video>
+<video controls width="100%">
+  <source src="https://raw.githubusercontent.com/seergiromero/ROS2-PX4-Learning/main/px4_indoor_exploration/docs/3D_Reconstruction.mp4" type="video/mp4">
+  <a href="https://github.com/seergiromero/ROS2-PX4-Learning/raw/refs/heads/main/px4_indoor_exploration/docs/3D_Reconstruction.mp4">Download the FAST-LIO reconstruction video</a>
+</video>
 
 The two outputs are intentionally shown separately:
 
